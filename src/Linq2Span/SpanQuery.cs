@@ -136,7 +136,7 @@ public ref struct SpanQuery<TSpan, TElement>
     }
 
     /// <summary>
-    /// Converts the elements to the type <see cref="TType"/>.
+    /// Converts the elements to the type.
     /// </summary>
     public SpanQuery<TSpan, TType> Cast<TType>()
     {
@@ -879,7 +879,7 @@ public ref struct SpanQuery<TSpan, TElement>
     }
 
     /// <summary>
-    /// Produces only the elements of type <see cref="TType"/>.
+    /// Produces only the elements of the type.
     /// </summary>
     public SpanQuery<TSpan, TType> OfType<TType>()
     {

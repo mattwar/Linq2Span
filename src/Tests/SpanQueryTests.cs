@@ -337,6 +337,32 @@ namespace Tests
         }
 
         [TestMethod]
+        public void Test_OfType()
+        {
+            object[] values = [1, 1.0, 1m, "one"];
+
+            AssertAreEquivalent(
+                values.OfType<int>().ToArray(),
+                values.AsSpanQuery().OfType<int>().ToArray()
+                );
+
+            AssertAreEquivalent(
+                values.OfType<double>().ToArray(),
+                values.AsSpanQuery().OfType<double>().ToArray()
+                );
+
+            AssertAreEquivalent(
+                values.OfType<decimal>().ToArray(),
+                values.AsSpanQuery().OfType<decimal>().ToArray()
+                );
+
+            AssertAreEquivalent(
+                values.OfType<string>().ToArray(),
+                values.AsSpanQuery().OfType<string>().ToArray()
+                );
+        }
+
+        [TestMethod]
         public void Test_Order()
         {
             AssertAreEquivalent(
