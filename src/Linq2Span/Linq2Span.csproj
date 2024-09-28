@@ -10,7 +10,7 @@
     <Authors>mattwar</Authors>
     <Description>LINQ operators for spans.</Description>
     <PackageProjectUrl>https://github.com/mattwar/Linq2Span</PackageProjectUrl>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageReadmeFile>NugetReadme.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/mattwar/Linq2Span</RepositoryUrl>
     <PackageTags>LINQ; SPAN; C#</PackageTags>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
@@ -20,7 +20,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="..\..\README.md">
+    <None Update="NugetReadme.md">
       <Pack>True</Pack>
       <PackagePath>\</PackagePath>
     </None>
