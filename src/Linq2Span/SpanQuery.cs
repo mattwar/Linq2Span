@@ -176,6 +176,8 @@ public ref struct SpanQuery<TSpan, TElement>
                         {
                             aggregator(chunk.ToArray(), chunkIndex + 1);
                         }
+
+                        post();
                     });
             });
 
