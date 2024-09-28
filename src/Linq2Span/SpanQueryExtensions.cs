@@ -4,7 +4,28 @@ namespace Linq2Span;
 
 public static class SpanQueryExtensions
 {
-    // operations represented as extensions here to allow for number constraints
+    public static SpanQuery<TSource, TSource> AsSpanQuery<TSource>(
+        this ReadOnlySpan<TSource> source)
+    {
+        return new SpanQuery<TSource, TSource>(
+            source,
+            NoopCreateAggregator<TSource>.Instance.Create
+            );
+    }
+
+    public static SpanQuery<TSource, TSource> AsSpanQuery<TSource>(
+        this Span<TSource> source)
+    {
+        return AsSpanQuery((ReadOnlySpan<TSource>)source);
+    }
+
+    public static SpanQuery<TSource, TSource> AsSpanQuery<TSource>(
+        this TSource[] source)
+    {
+        return AsSpanQuery((ReadOnlySpan<TSource>)source);
+    }
+
+    // operations represented as extensions here to allow for constraints
 
     public static TSource Average<TSpan, TSource>(
         this SpanQuery<TSpan, TSource> source)

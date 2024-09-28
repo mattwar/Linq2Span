@@ -90,30 +90,6 @@ public static class SpanOperators
 
     #endregion
 
-    #region AsQuery
-    public static SpanQuery<TSource, TSource> AsQuery<TSource>(
-        this ReadOnlySpan<TSource> source)
-    {
-        return new SpanQuery<TSource, TSource>(
-            source,
-            (pre, aggregator, post) => (pre, aggregator, post)
-            );
-    }
-
-    public static SpanQuery<TSource, TSource> AsQuery<TSource>(
-        this Span<TSource> source)
-    {
-        return AsQuery((ReadOnlySpan<TSource>)source);
-    }
-
-    public static SpanQuery<TSource, TSource> AsSpanQuery<TSource>(
-        this TSource[] source)
-    {
-        return AsQuery((ReadOnlySpan<TSource>)source);
-    }
-
-    #endregion
-
     #region Average
     public static TSource Average<TSource>(
         this ReadOnlySpan<TSource> source)
@@ -139,7 +115,12 @@ public static class SpanOperators
         Func<TSource, TNumber> selector)
         where TNumber : INumber<TNumber>
     {
-        return AsQuery(source).Average(selector);
+        var (total, count) = source.Aggregate(
+            (total: TNumber.Zero, count: TNumber.Zero),
+            (acc, value) => (acc.total + selector(value), acc.count + TNumber.One)
+            );
+
+        return total / count;
     }
 
     public static TNumber Average<TSource, TNumber>(

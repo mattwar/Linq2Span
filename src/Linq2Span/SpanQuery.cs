@@ -1,11 +1,4 @@
-﻿using System;
-using System.Collections;
-using System.Collections.Generic;
-using System.Linq;
-using System.Reflection;
-using System.Text;
-using System.Threading.Tasks;
-using System.Xml.Linq;
+﻿using System.Xml.Linq;
 
 namespace Linq2Span;
 
@@ -107,7 +100,7 @@ public ref struct SpanQuery<TSpan, TElement>
     public bool Any()
     {
         var hasValue = false;
-        
+
         ForEach(value =>
         {
             hasValue = true;
@@ -123,12 +116,66 @@ public ref struct SpanQuery<TSpan, TElement>
         return this.Where(predicate).Any();
     }
 
+    public SpanQuery<TSpan, TElement> Append(
+        TElement element)
+    {
+        return this.Continue<TElement>(
+            createAggregator => (pre, aggregator, post) =>
+            {
+                int nextIndex = 0;
+                return createAggregator(
+                    pre,
+                    (value, index) =>
+                    {
+                        nextIndex = index + 1;
+                        return aggregator(value, index);
+                    },
+                    () => aggregator(element, nextIndex)
+                    );
+            });
+    }
+
     /// <summary>
     /// Converts the elements to the type <see cref="TType"/>.
     /// </summary>
     public SpanQuery<TSpan, TType> Cast<TType>()
     {
         return this.Select(value => (TType)(object)value!);
+    }
+
+    public SpanQuery<TSpan, TElement[]> Chunk(
+        int size)
+    {
+        return this.Continue<TElement[]>(
+            createAggregator => (pre, aggregator, post) =>
+            {
+                int chunkIndex = -1;
+                var chunk = new List<TElement>();
+                return createAggregator(
+                    pre,
+                    (value, _) =>
+                    {
+                        chunk.Add(value);
+
+                        if (chunk.Count == size)
+                        {
+                            chunkIndex++;
+                            if (!aggregator(chunk.ToArray(), chunkIndex))
+                                return false;
+                            chunk.Clear();
+                        }
+
+                        return true;
+                    },
+                    () =>
+                    {
+                        if (chunk.Count > 0)
+                        {
+                            aggregator(chunk.ToArray(), chunkIndex + 1);
+                        }
+                    });
+            });
+
     }
 
     public SpanQuery<TSpan, TElement> Concat(
@@ -545,6 +592,40 @@ public ref struct SpanQuery<TSpan, TElement>
             });
     }
 
+    public SpanQuery<TSpan, TResult> GroupJoin<TInner, TKey, TResult>(
+        IEnumerable<TInner> inner,
+        Func<TElement, TKey> outerKeySelector,
+        Func<TInner, TKey> innerKeySelector,
+        Func<TElement, IEnumerable<TInner>, TResult> resultSelector,
+        IEqualityComparer<TKey>? comparer = null)
+    {
+        return Continue<TResult>(
+            createAggregator => (pre, aggregator, post) =>
+            {
+                var outerList = new List<TElement>();
+                return createAggregator(
+                    pre,
+                    (value, _) =>
+                    {
+                        outerList.Add(value);
+                        return true;
+                    },
+                    () =>
+                    {
+                        int resultIndex = 0;
+                        var results = outerList.GroupJoin(inner, outerKeySelector, innerKeySelector, resultSelector, comparer);
+                        foreach (var result in results)
+                        {
+                            if (!aggregator(result, resultIndex))
+                                break;
+                            resultIndex++;
+                        }
+
+                        post();
+                    });
+            });
+    }
+
     public SpanQuery<TSpan, TElement> Intersect(
         IEnumerable<TElement> elements,
         IEqualityComparer<TElement>? comparer = null)
@@ -679,6 +760,124 @@ public ref struct SpanQuery<TSpan, TElement>
         return LastOrDefault(x => true);
     }
 
+    public long LongCount()
+    {
+        long count = 0;
+        ForEach(value => count++);
+        return count;
+    }
+
+    public long LongCount(Func<TElement, bool> predicate)
+    {
+        long count = 0;
+        ForEach(value =>
+        {
+            if (predicate(value))
+                count++;
+        });
+        return count;
+    }
+
+    public SpanQuery<TSpan, TElement> OrderBy<TKey>(
+        Func<TElement, TKey> keySelector,
+        IComparer<TKey>? keyComparer = null)
+    {
+        keyComparer ??= Comparer<TKey>.Default;
+        return Order((a, b) => keyComparer.Compare(keySelector(a), keySelector(b)));
+    }
+
+    public SpanQuery<TSpan, TElement> OrderByDescending<TKey>(
+        Func<TElement, TKey> keySelector,
+        IComparer<TKey>? keyComparer = null)
+    {
+        keyComparer ??= Comparer<TKey>.Default;
+        return Order((a, b) => -keyComparer.Compare(keySelector(a), keySelector(b)));
+    }
+
+    public SpanQuery<TSpan, TElement> Order(
+        IComparer<TElement>? comparer = null)
+    {
+        comparer ??= Comparer<TElement>.Default;
+        return Order(comparer.Compare);
+    }
+
+    public SpanQuery<TSpan, TElement> OrderDescending(
+        IComparer<TElement>? comparer = null)
+    {
+        comparer ??= Comparer<TElement>.Default;
+        return Order((a, b) => -comparer.Compare(a,b));
+    }
+
+    private SpanQuery<TSpan, TElement> Order(
+        Comparison<TElement> comparer)
+    {
+        return Continue<TElement>(
+            createAggregator => (pre, aggregator, post) =>
+            {
+                var fullComparer = comparer;
+
+                if (aggregator.Target is OrderAggregator ord)
+                {
+                    fullComparer = Combine(comparer, ord.Comparer);
+                    aggregator = ord.Aggregator;
+                }
+
+                var list = new List<TElement>();
+                return createAggregator(
+                    pre,
+                    (value, _) =>
+                    {
+                        list.Add(value);
+                        return true;
+                    },
+                    () =>
+                    {
+                        list.Sort(fullComparer);
+                        int index = 0;
+                        foreach (var item in list)
+                        {
+                            if (!aggregator(item, index))
+                                break;
+                            index++;
+                        }
+
+                        post();
+                    });
+            });
+    }
+
+    private static Comparison<TElement> Combine(
+        Comparison<TElement> primary,
+        Comparison<TElement> secondary)
+    {
+        return (a, b) =>
+        {
+            var result = primary(a, b);
+            if (result == 0)
+                return secondary(a, b);
+            return result;
+        };
+    }
+
+    private class OrderAggregator
+    {
+        public Func<TElement, int, bool> Aggregator;
+        public Comparison<TElement> Comparer { get; }
+
+        public OrderAggregator(
+            Func<TElement, int, bool> aggregator,
+            Comparison<TElement> comparer)
+        {
+            this.Aggregator = aggregator;
+            this.Comparer = comparer;
+        }
+
+        public bool Aggregate(TElement value, int index)
+        {
+            return this.Aggregator(value, index);
+        }
+    }
+
     /// <summary>
     /// Produces only the elements of type <see cref="TType"/>.
     /// </summary>
@@ -788,22 +987,22 @@ public ref struct SpanQuery<TSpan, TElement>
             });
     }
 
-    public SpanQuery<TSpan, TMany> SelectMany<TMany>(
-        Func<TElement, IEnumerable<TMany>> selector)
+    public SpanQuery<TSpan, TResult> SelectMany<TResult>(
+        Func<TElement, int, IEnumerable<TResult>> selector)
     {
-        return Continue<TMany>(
+        return Continue<TResult>(
             createAggregator => (pre, aggregator, post) =>
             {
-                int index = 0;
+                int resultIndex = 0;
                 return createAggregator(
                     pre,
-                    (value, _) =>
+                    (value, valueIndex) =>
                     {
-                        foreach (var item in selector(value))
+                        foreach (var item in selector(value, valueIndex))
                         {
-                            if (!aggregator(item, index))
+                            if (!aggregator(item, resultIndex))
                                 return false;
-                            index++;
+                            resultIndex++;
                         }
 
                         return true;
@@ -811,6 +1010,46 @@ public ref struct SpanQuery<TSpan, TElement>
                     post
                 );
             });
+    }
+
+    public SpanQuery<TSpan, TResult> SelectMany<TResult>(
+        Func<TElement, IEnumerable<TResult>> selector)
+    {
+        return SelectMany((value, index) => selector(value));
+    }
+
+    public SpanQuery<TSpan, TResult> SelectMany<TCollection, TResult>(
+        Func<TElement, int, IEnumerable<TCollection>> collectionSelector,
+        Func<TElement, TCollection, TResult> resultSelector)
+    {
+        return Continue<TResult>(
+            createAggregator => (pre, aggregator, post) =>
+            {
+                int resultIndex = 0;
+                return createAggregator(
+                    pre,
+                    (value, valueIndex) =>
+                    {
+                        foreach (var item in collectionSelector(value, valueIndex))
+                        {
+                            var result = resultSelector(value, item);
+                            if (!aggregator(result, resultIndex))
+                                return false;
+                            resultIndex++;
+                        }
+
+                        return true;
+                    },
+                    post
+                );
+            });
+    }
+
+    public SpanQuery<TSpan, TResult> SelectMany<TCollection, TResult>(
+        Func<TElement, IEnumerable<TCollection>> collectionSelector,
+        Func<TElement, TCollection, TResult> resultSelector)
+    {
+        return SelectMany((item, index) => collectionSelector(item), resultSelector);
     }
 
     public TElement Single()
@@ -1041,6 +1280,44 @@ public ref struct SpanQuery<TSpan, TElement>
         return TakeWhile((value, index) => predicate(value));
     }
 
+    public SpanQuery<TSpan, TElement> ThenBy<TKey>(
+        Func<TElement, TKey> keySelector,
+        IComparer<TKey>? keyComparer = null)
+    {
+        keyComparer ??= Comparer<TKey>.Default;
+        return ThenBy((a, b) => keyComparer.Compare(keySelector(a), keySelector(b)));
+    }
+
+    public SpanQuery<TSpan, TElement> ThenByDescending<TKey>(
+        Func<TElement, TKey> keySelector,
+        IComparer<TKey>? keyComparer = null)
+    {
+        keyComparer ??= Comparer<TKey>.Default;
+        return ThenBy((a, b) => -keyComparer.Compare(keySelector(a), keySelector(b)));
+    }
+
+    private SpanQuery<TSpan, TElement> ThenBy(
+        Comparison<TElement> comparer)
+    {
+        return Continue<TElement>(
+            createAggregator => (pre, aggregator, post) =>
+            {
+                var fullComparer = comparer;
+
+                if (aggregator.Target is OrderAggregator ord)
+                {
+                    fullComparer = Combine(comparer, ord.Comparer);
+                    aggregator = ord.Aggregator;
+                }
+
+                return createAggregator(
+                    pre,
+                    new OrderAggregator(aggregator, fullComparer).Aggregate,
+                    post
+                    );
+            });
+    }
+
     /// <summary>
     /// Converts the <see cref="SpanQuery{TSpan, TElement}"/> to an array.
     /// </summary>
@@ -1181,3 +1458,16 @@ public delegate (Func<bool> pre, Func<TValue2, int, bool> aggregator, Action pos
 public delegate CreateAggregator<TValue1, TValue3> CreateCreateAggregator<TValue1, TValue2, TValue3>(
     CreateAggregator<TValue2, TValue3> createAggregator
     );
+
+internal class NoopCreateAggregator<TElement>
+{
+    public static readonly NoopCreateAggregator<TElement> Instance = new NoopCreateAggregator<TElement>();
+
+    public (Func<bool> pre, Func<TElement, int, bool> aggregator, Action post) Create(
+        Func<bool> pre,
+        Func<TElement, int, bool> aggregator,
+        Action post)
+    {
+        return (pre, aggregator, post);
+    }
+}
