@@ -130,8 +130,11 @@ public ref struct SpanQuery<TSpan, TElement>
                         nextIndex = index + 1;
                         return aggregator(value, index);
                     },
-                    () => aggregator(element, nextIndex)
-                    );
+                    () =>
+                    {
+                        aggregator(element, nextIndex);
+                        post();
+                    });
             });
     }
 
