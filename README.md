@@ -47,10 +47,16 @@ even when the final operation is an aggregate or `ForEach`. Use of these operato
 ```csharp
 Span<int> span = stackalloc int[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
 
-var count = span.AsSpanQuery()
+// print the squares of the even numbers
+span.AsSpanQuery()
 	.Where(i => i % 2 == 0)
 	.Select(i => i * i)
 	.ForEach(i => Console.WriteLine(i));
+```
+
+```csharp
+// first even number w/o SpanQuery
+var first = span.FirstOrDefault(i => i % 2 == 0);
 ```
 
 # How to Access
