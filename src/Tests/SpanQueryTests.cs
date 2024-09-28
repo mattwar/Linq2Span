@@ -14,9 +14,6 @@ namespace Tests
         [TestMethod]
         public void Test_All()
         {
-            Assert.IsTrue(OneToTen.AsSpan().All(x => x > 0));
-            Assert.IsFalse(OneToTen.AsSpan().All(x => x > 1));
-
             Assert.IsTrue(OneToTen.AsSpanQuery().All(x => x > 0));
             Assert.IsFalse(OneToTen.AsSpanQuery().All(x => x > 1));
         }
@@ -24,9 +21,6 @@ namespace Tests
         [TestMethod]
         public void Test_Aggregate()
         {
-            Assert.AreEqual(55, OneToTen.AsSpan().Aggregate(0, (total, value) => total + value));
-            Assert.AreEqual(3628800, OneToTen.AsSpan().Aggregate(1, (total, value) => total * value));
-
             Assert.AreEqual(55, OneToTen.AsSpanQuery().Aggregate(0, (total, value) => total + value));
             Assert.AreEqual(3628800, OneToTen.AsSpanQuery().Aggregate(1, (total, value) => total * value));
         }
@@ -35,18 +29,12 @@ namespace Tests
         public void Test_Any()
         {
             int[] none = [];
-
-            Assert.IsTrue(OneToTen.AsSpan().Any());
-
             Assert.IsTrue(OneToTen.AsSpanQuery().Any());
         }
 
         [TestMethod]
         public void Test_Any_Predicate()
         {
-            Assert.IsTrue(OneToTen.AsSpan().Any(x => x > 0));
-            Assert.IsFalse(OneToTen.AsSpan().Any(x => x < 0));
-
             Assert.IsTrue(OneToTen.AsSpanQuery().Any(x => x > 0));
             Assert.IsFalse(OneToTen.AsSpanQuery().Any(x => x < 0));
         }
@@ -54,15 +42,12 @@ namespace Tests
         [TestMethod]
         public void Test_Average()
         {
-            Assert.AreEqual(5.5, OneToTen_double.AsSpan().Average());
             Assert.AreEqual(5.5, OneToTen_double.AsSpanQuery().Average());
         }
 
         [TestMethod]
         public void Test_Cast()
         {
-            // not supported on span directly
-
             AssertAreEquivalent(
                 OneToTen.AsSpanQuery().Cast<object>().ToArray(),
                 (object)OneToTen.Cast<object>().ToArray()
@@ -70,12 +55,17 @@ namespace Tests
         }
 
         [TestMethod]
+        public void Test_Concat()
+        {
+            AssertAreEquivalent(
+                OneToTen.Concat(OneToTen).ToArray(),
+                OneToTen.AsSpanQuery().Concat(OneToTen).ToArray()
+                );
+        }
+
+        [TestMethod]
         public void Test_Contains()
         {
-            Assert.IsTrue(OneToTen.AsSpan().Contains(10));
-            Assert.IsTrue(OneToTen.AsSpan().Contains(1));
-            Assert.IsFalse(OneToTen.AsSpan().Contains(0));
-
             Assert.IsTrue(OneToTen.AsSpanQuery().Contains(10));
             Assert.IsTrue(OneToTen.AsSpanQuery().Contains(1));
             Assert.IsFalse(OneToTen.AsSpanQuery().Contains(0));
@@ -84,15 +74,31 @@ namespace Tests
         [TestMethod]
         public void Test_Count()
         {
-            Assert.AreEqual(10, OneToTen.AsSpan().Count());
-            Assert.AreEqual(5, OneToTen.AsSpan().Count(x => x > 5));
+            Assert.AreEqual(10, OneToTen.AsSpanQuery().Count());
         }
 
         [TestMethod]
         public void Test_Count_Predicate()
         {
-            Assert.AreEqual(10, OneToTen.AsSpanQuery().Count());
             Assert.AreEqual(5, OneToTen.AsSpanQuery().Count(x => x > 5));
+        }
+
+        [TestMethod]
+        public void Test_DefaultIfEmpty()
+        {
+            int[] none = [];
+            int[] one = [1];
+            AssertAreEquivalent([0], none.AsSpanQuery().DefaultIfEmpty().ToArray());
+            AssertAreEquivalent([1], one.AsSpanQuery().DefaultIfEmpty().ToArray());
+        }
+
+        [TestMethod]
+        public void Test_DefaultIfEmpty_Default()
+        {
+            int[] none = [];
+            int[] one = [1];
+            AssertAreEquivalent([2], none.AsSpanQuery().DefaultIfEmpty(2).ToArray());
+            AssertAreEquivalent([1], one.AsSpanQuery().DefaultIfEmpty(2).ToArray());
         }
 
         [TestMethod]
@@ -100,10 +106,6 @@ namespace Tests
         {
             int[] nondistinct = [1, 2, 3, 4, 5, 1, 2, 3, 4, 5];
             string[] nondistinct2 = ["one", "One", "Two", "TWO"];
-
-            AssertAreEquivalent([1, 2, 3, 4, 5], nondistinct.AsSpan().Distinct().ToArray());
-            AssertAreEquivalent(["one", "Two"], nondistinct2.AsSpan().Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
-
             AssertAreEquivalent([1, 2, 3, 4, 5], nondistinct.AsSpanQuery().Distinct().ToArray());
             AssertAreEquivalent(["one", "Two"], nondistinct2.AsSpanQuery().Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
         }
@@ -112,18 +114,71 @@ namespace Tests
         public void Test_DistinctBy()
         {
             string[] nondistinct = ["one", "two", "three", "four", "five"];
-            AssertAreEquivalent(["one", "three", "four"], nondistinct.AsSpan().DistinctBy(x => x.Length).ToArray());
             AssertAreEquivalent(["one", "three", "four"], nondistinct.AsSpanQuery().DistinctBy(x => x.Length).ToArray());
+        }
+
+        [TestMethod]
+        public void Test_ElementAt()
+        {
+            Assert.AreEqual(3, OneToTen.AsSpanQuery().ElementAt(2));
+            Assert.AreEqual(1, OneToTen.AsSpanQuery().ElementAt(0));
+            Assert.ThrowsException<ArgumentOutOfRangeException>(() => OneToTen.AsSpanQuery().ElementAt(10));
+        }
+
+        [TestMethod]
+        public void Test_ElementAt_Index()
+        {
+            Assert.AreEqual(3, OneToTen.AsSpanQuery().ElementAt((Index)2));
+            Assert.AreEqual(1, OneToTen.AsSpanQuery().ElementAt((Index)0));
+            Assert.ThrowsException<ArgumentOutOfRangeException>(() => OneToTen.AsSpanQuery().ElementAt((Index)10));
+            Assert.AreEqual(10, OneToTen.AsSpanQuery().ElementAt(^1));
+            Assert.AreEqual(1, OneToTen.AsSpanQuery().ElementAt(^10));
+            Assert.ThrowsException<ArgumentOutOfRangeException>(() => OneToTen.AsSpanQuery().ElementAt(^0));
+            Assert.ThrowsException<ArgumentOutOfRangeException>(() => OneToTen.AsSpanQuery().ElementAt(^11));
+        }
+
+        [TestMethod]
+        public void Test_ElementAtOrDefault()
+        {
+            Assert.AreEqual(3, OneToTen.AsSpanQuery().ElementAtOrDefault(2));
+            Assert.AreEqual(1, OneToTen.AsSpanQuery().ElementAtOrDefault(0));
+            Assert.AreEqual(0, OneToTen.AsSpanQuery().ElementAtOrDefault(10));
+        }
+
+        [TestMethod]
+        public void Test_ElementAtOrDefault_Index()
+        {
+            Assert.AreEqual(3, OneToTen.AsSpanQuery().ElementAtOrDefault((Index)2));
+            Assert.AreEqual(1, OneToTen.AsSpanQuery().ElementAtOrDefault((Index)0));
+            Assert.AreEqual(0, OneToTen.AsSpanQuery().ElementAtOrDefault((Index)10));
+            Assert.AreEqual(10, OneToTen.AsSpanQuery().ElementAtOrDefault(^1));
+            Assert.AreEqual(1, OneToTen.AsSpanQuery().ElementAtOrDefault(^10));
+            Assert.AreEqual(0, OneToTen.AsSpanQuery().ElementAtOrDefault(^0));
+            Assert.AreEqual(0, OneToTen.AsSpanQuery().ElementAtOrDefault(^11));
+        }
+
+        [TestMethod]
+        public void Test_Except()
+        {
+            AssertAreEquivalent(
+                OneToTen.Except([2, 4, 6]).ToArray(),
+                OneToTen.AsSpanQuery().Except([2, 4, 6]).ToArray()
+                );
+        }
+
+        [TestMethod]
+        public void Test_ExceptBy()
+        {
+            AssertAreEquivalent(
+                OneToTen.ExceptBy([2, 4, 6], x => x * 2).ToArray(),
+                OneToTen.AsSpanQuery().ExceptBy([2, 4, 6], x => x * 2).ToArray()
+                );
         }
 
         [TestMethod]
         public void Test_First()
         {
             int[] none = [];
-
-            Assert.AreEqual(OneToTen.AsSpan().First(), 1);
-            Assert.ThrowsException<InvalidOperationException>(() => none.AsSpan().First());
-
             Assert.AreEqual(OneToTen.AsSpanQuery().First(), 1);
             Assert.ThrowsException<InvalidOperationException>(() => none.AsSpanQuery().First());
         }
@@ -131,9 +186,6 @@ namespace Tests
         [TestMethod]
         public void Test_First_Predicate()
         {
-            Assert.AreEqual(OneToTen.AsSpan().First(x => x > 5), 6);
-            Assert.ThrowsException<InvalidOperationException>(() => OneToTen.AsSpan().First(x => x > 10));
-
             Assert.AreEqual(OneToTen.AsSpanQuery().First(x => x > 5), 6);
             Assert.ThrowsException<InvalidOperationException>(() => OneToTen.AsSpanQuery().First(x => x > 10));
         }
@@ -142,10 +194,6 @@ namespace Tests
         public void Test_FirstOrDefault()
         {
             int[] none = [];
-
-            Assert.AreEqual(OneToTen.AsSpan().FirstOrDefault(), 1);
-            Assert.AreEqual(none.AsSpan().FirstOrDefault(), 0);
-
             Assert.AreEqual(OneToTen.AsSpanQuery().FirstOrDefault(), 1);
             Assert.AreEqual(none.AsSpanQuery().FirstOrDefault(), 0);
         }
@@ -153,9 +201,6 @@ namespace Tests
         [TestMethod]
         public void Test_FirstOrDefault_Predicate()
         {
-            Assert.AreEqual(OneToTen.AsSpan().FirstOrDefault(x => x > 5), 6);
-            Assert.AreEqual(OneToTen.AsSpan().FirstOrDefault(x => x > 10), 0);
-
             Assert.AreEqual(OneToTen.AsSpanQuery().FirstOrDefault(x => x > 5), 6);
             Assert.AreEqual(OneToTen.AsSpanQuery().FirstOrDefault(x => x > 10), 0);
         }
@@ -165,23 +210,110 @@ namespace Tests
         {
             AssertAreEquivalent(
                 OneToTen.GroupBy(x => x / 2).ToArray(),
-                OneToTen.AsSpan().GroupBy(x => x / 2).ToArray()
-                );
-
-            AssertAreEquivalent(
-                OneToTen.GroupBy(x => x / 2).ToArray(),
                 OneToTen.AsSpanQuery().GroupBy(x => x / 2).ToArray()
+                );
+        }
+
+        [TestMethod]
+        public void Test_Intersect()
+        {
+            AssertAreEquivalent(
+                OneToTen.Intersect([2, 4, 6]).ToArray(),
+                OneToTen.AsSpanQuery().Intersect([2, 4, 6]).ToArray()
+                );
+        }
+
+        [TestMethod]
+        public void Test_IntersectBy()
+        {
+            AssertAreEquivalent(
+                OneToTen.IntersectBy([2, 4, 6], x => x * 2).ToArray(),
+                OneToTen.AsSpanQuery().IntersectBy([2, 4, 6], x => x * 2).ToArray()
+                );
+        }
+
+        [TestMethod]
+        public void Test_Join()
+        {
+            AssertAreEquivalent(
+                OneToTen.Join(OneToTen, x => x, y => y, (x, y) => x = y).ToArray(),
+                OneToTen.AsSpanQuery().Join(OneToTen, x => x, y => y, (x, y) => x = y).ToArray()
+                );
+        }
+
+        [TestMethod]
+        public void Test_Last()
+        {
+            int[] none = [];
+            Assert.AreEqual(OneToTen.AsSpanQuery().Last(), 10);
+            Assert.ThrowsException<InvalidOperationException>(() => none.AsSpanQuery().Last());
+        }
+
+        [TestMethod]
+        public void Test_LastOrDefault()
+        {
+            int[] none = [];
+            Assert.AreEqual(OneToTen.AsSpanQuery().LastOrDefault(), 10);
+            Assert.AreEqual(none.AsSpanQuery().LastOrDefault(), 0);
+        }
+
+        [TestMethod]
+        public void Test_Max()
+        {
+            Assert.AreEqual(10, OneToTen.AsSpanQuery().Max());
+        }
+
+        [TestMethod]
+        public void Test_Max_Selector()
+        {
+            Assert.AreEqual(20, OneToTen.AsSpanQuery().Max(x => x * 2));
+        }
+
+        [TestMethod]
+        public void Test_MaxBy()
+        {
+            Assert.AreEqual(1, OneToTen.AsSpanQuery().MaxBy(x => -x));
+        }
+
+        [TestMethod]
+        public void Test_Min()
+        {
+            Assert.AreEqual(1, OneToTen.AsSpanQuery().Min());
+        }
+
+        [TestMethod]
+        public void Test_Min_Selector()
+        {
+            Assert.AreEqual(2, OneToTen.AsSpanQuery().Min(x => x * 2));
+        }
+
+        [TestMethod]
+        public void Test_MinBy()
+        {
+            Assert.AreEqual(10, OneToTen.AsSpanQuery().MinBy(x => -x));
+        }
+
+        [TestMethod]
+        public void Test_Prepend()
+        {
+            AssertAreEquivalent(
+                OneToTen.Prepend(0).ToArray(),
+                OneToTen.AsSpanQuery().Prepend(0).ToArray()
+                );
+        }
+
+        [TestMethod]
+        public void Test_Reverse()
+        {
+            AssertAreEquivalent(
+                OneToTen.Reverse().ToArray(),
+                OneToTen.AsSpanQuery().Reverse().ToArray()
                 );
         }
 
         [TestMethod]
         public void Test_Select()
         {
-            AssertAreEquivalent(
-                OneToTen.Select(x => x * 2).ToArray(),
-                OneToTen.AsSpan().Select(x => x * 2).ToArray()
-                );
-
             AssertAreEquivalent(
                 OneToTen.Select(x => x * 2).ToArray(),
                 OneToTen.AsSpanQuery().Select(x => x * 2).ToArray()
@@ -193,11 +325,6 @@ namespace Tests
         {
             AssertAreEquivalent(
                 Enumerable.Range(0, 10).ToArray(),
-                OneToTen.AsSpan().Select((x, i) => i).ToArray()
-                );
-
-            AssertAreEquivalent(
-                Enumerable.Range(0, 10).ToArray(),
                 OneToTen.AsSpanQuery().Select((x, i) => i).ToArray()
                 );
         }
@@ -205,11 +332,6 @@ namespace Tests
         [TestMethod]
         public void Test_SelectMany()
         {
-            AssertAreEquivalent(
-                OneToTen.SelectMany(x => new[] { x, x }).ToArray(),
-                OneToTen.AsSpan().SelectMany(x => new[] { x, x }).ToArray()
-                );
-
             AssertAreEquivalent(
                 OneToTen.SelectMany(x => new[] { x, x }).ToArray(),
                 OneToTen.AsSpanQuery().SelectMany(x => new[] { x, x }).ToArray()
@@ -222,11 +344,6 @@ namespace Tests
             int[] one = [1];
             int[] none = [];
             int[] two = [1, 2];
-
-            Assert.AreEqual(one.AsSpan().Single(), 1);
-            Assert.ThrowsException<InvalidOperationException>(() => none.AsSpan().Single());
-            Assert.ThrowsException<InvalidOperationException>(() => two.AsSpan().Single());
-
             Assert.AreEqual(one.AsSpanQuery().Single(), 1);
             Assert.ThrowsException<InvalidOperationException>(() => none.AsSpanQuery().Single());
             Assert.ThrowsException<InvalidOperationException>(() => two.AsSpanQuery().Single());
@@ -235,10 +352,6 @@ namespace Tests
         [TestMethod]
         public void Test_Single_Predicate()
         {
-            Assert.AreEqual(OneToTen.AsSpan().Single(x => x > 9), 10);
-            Assert.ThrowsException<InvalidOperationException>(() => OneToTen.AsSpan().Single(x => x > 10));
-            Assert.ThrowsException<InvalidOperationException>(() => OneToTen.AsSpan().Single(x => x > 8));
-
             Assert.AreEqual(OneToTen.AsSpanQuery().Single(x => x > 9), 10);
             Assert.ThrowsException<InvalidOperationException>(() => OneToTen.AsSpanQuery().Single(x => x > 10));
             Assert.ThrowsException<InvalidOperationException>(() => OneToTen.AsSpanQuery().Single(x => x > 8));
@@ -250,11 +363,6 @@ namespace Tests
             int[] one = [1];
             int[] none = [];
             int[] two = [1, 2];
-
-            Assert.AreEqual(one.AsSpan().SingleOrDefault(), 1);
-            Assert.AreEqual(none.AsSpan().SingleOrDefault(), 0);
-            Assert.ThrowsException<InvalidOperationException>(() => two.AsSpan().SingleOrDefault());
-
             Assert.AreEqual(one.AsSpanQuery().SingleOrDefault(), 1);
             Assert.AreEqual(none.AsSpanQuery().SingleOrDefault(), 0);
             Assert.ThrowsException<InvalidOperationException>(() => two.AsSpanQuery().SingleOrDefault());
@@ -263,10 +371,6 @@ namespace Tests
         [TestMethod]
         public void Test_SingleOrDefault_Predicate()
         {
-            Assert.AreEqual(OneToTen.AsSpan().SingleOrDefault(x => x > 9), 10);
-            Assert.AreEqual(OneToTen.AsSpan().SingleOrDefault(x => x > 10), 0);
-            Assert.ThrowsException<InvalidOperationException>(() => OneToTen.AsSpan().SingleOrDefault(x => x > 8));
-
             Assert.AreEqual(OneToTen.AsSpanQuery().SingleOrDefault(x => x > 9), 10);
             Assert.AreEqual(OneToTen.AsSpanQuery().SingleOrDefault(x => x > 10), 0);
             Assert.ThrowsException<InvalidOperationException>(() => OneToTen.AsSpanQuery().SingleOrDefault(x => x > 8));
@@ -275,32 +379,115 @@ namespace Tests
         [TestMethod]
         public void Test_Sum()
         {
-            Assert.AreEqual(55, OneToTen.AsSpan().Sum());
-
             Assert.AreEqual(55, OneToTen.AsSpanQuery().Sum());
         }
 
         [TestMethod]
         public void Test_Sum_Selector()
         {
-            Assert.AreEqual(110, OneToTen.AsSpan().Sum(x => x * 2));
-
             Assert.AreEqual(110, OneToTen.AsSpanQuery().Sum(x => x * 2));
         }
 
         [TestMethod]
+        public void Test_Skip()
+        {
+            AssertAreEquivalent(
+                OneToTen.Skip(5).ToArray(),
+                OneToTen.AsSpanQuery().Skip(5).ToArray()
+                );
+        }
+
+        [TestMethod]
+        public void Test_SkipLast()
+        {
+            AssertAreEquivalent(
+                OneToTen.SkipLast(5).ToArray(),
+                OneToTen.AsSpanQuery().SkipLast(5).ToArray()
+                );
+        }
+
+        [TestMethod]
+        public void Test_SkipWhile()
+        {
+            AssertAreEquivalent(
+                OneToTen.SkipWhile(x => x < 6).ToArray(),
+                OneToTen.AsSpanQuery().SkipWhile(x => x < 6).ToArray()
+                );
+        }
+
+        [TestMethod]
+        public void Test_SkipWhile_Index()
+        {
+            AssertAreEquivalent(
+                OneToTen.SkipWhile((x, i) => i < 6).ToArray(),
+                OneToTen.AsSpanQuery().SkipWhile((x, i) => i < 6).ToArray()
+                );
+        }
+
+        [TestMethod]
+        public void Test_Take()
+        {
+            AssertAreEquivalent(
+                OneToTen.Take(5).ToArray(),
+                OneToTen.AsSpanQuery().Take(5).ToArray()
+                );
+        }
+
+        [TestMethod]
+        public void Test_TakeLast()
+        {
+            AssertAreEquivalent(
+                OneToTen.TakeLast(5).ToArray(),
+                OneToTen.AsSpanQuery().TakeLast(5).ToArray()
+                );
+        }
+
+        [TestMethod]
+        public void Test_TakeWhile()
+        {
+            AssertAreEquivalent(
+                OneToTen.TakeWhile(x => x < 6).ToArray(),
+                OneToTen.AsSpanQuery().TakeWhile(x => x < 6).ToArray()
+                );
+        }
+
+        [TestMethod]
+        public void Test_TakeWhile_Index()
+        {
+            AssertAreEquivalent(
+                OneToTen.TakeWhile((x, i) => i < 6).ToArray(),
+                OneToTen.AsSpanQuery().TakeWhile((x, i) => i < 6).ToArray()
+                );
+        }
+
+        [TestMethod]
+        public void Test_Union()
+        {
+            AssertAreEquivalent(
+                OneToTen.Union([2, 11, 15]).ToArray(),
+                OneToTen.AsSpanQuery().Union([2, 11, 15]).ToArray()
+                );
+        }
+
+        [TestMethod]
+        public void Test_UnionBy()
+        {
+            AssertAreEquivalent(
+                OneToTen.UnionBy([2, 11, 15], x => x % 2).ToArray(),
+                OneToTen.AsSpanQuery().UnionBy([2, 11, 15], x => x % 2).ToArray()
+                );
+        }
+
+
+        [TestMethod]
         public void Test_Where()
         {
-            AssertAreEquivalent([6, 7, 8, 9, 10], OneToTen.AsSpan().Where(x => x > 5).ToArray());
-
             AssertAreEquivalent([6, 7, 8, 9, 10], OneToTen.AsSpanQuery().Where(x => x > 5).ToArray());
         }
 
         [TestMethod]
         public void Test_Where_Index()
         {
-            AssertAreEquivalent([7, 8, 9, 10], OneToTen.AsSpan().Where((x, i) => i > 5).ToArray());
-
             AssertAreEquivalent([7, 8, 9, 10], OneToTen.AsSpanQuery().Where((x, i) => i > 5).ToArray());
         }
     }

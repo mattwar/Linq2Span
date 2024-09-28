@@ -1,9 +1,11 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using System.Numerics;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 
 namespace Linq2Span;
 
@@ -12,7 +14,7 @@ public ref struct SpanQuery<TSpan, TElement>
     private readonly ReadOnlySpan<TSpan> _span;
     private readonly CreateAggregator<TElement, TSpan> _createAggregator;
 
-    public SpanQuery(
+    internal SpanQuery(
         ReadOnlySpan<TSpan> span,
         CreateAggregator<TElement, TSpan> createAggregator)
     {
@@ -39,15 +41,18 @@ public ref struct SpanQuery<TSpan, TElement>
     /// </summary>
     public void ForEach(Func<TElement, int, bool> action)
     {
-        var (aggregator, flusher) = _createAggregator(action, () => { });
+        var (pre, aggregator, post) = _createAggregator(() => true, action, () => { });
 
-        for (int i = 0; i < _span.Length; i++)
+        if (pre())
         {
-            if (!aggregator(_span[i], i))
-                break;
+            for (int i = 0; i < _span.Length; i++)
+            {
+                if (!aggregator(_span[i], i))
+                    break;
+            }
         }
 
-        flusher();
+        post();
     }
 
     /// <summary>
@@ -71,33 +76,52 @@ public ref struct SpanQuery<TSpan, TElement>
     public void ForEach(Action<TElement> action) =>
         ForEach(value => { action(value); return true; });
 
-    /// <summary>
-    /// Converts the <see cref="SpanQuery{TSpan, TElement}"/> to a <see cref="List{T}"/>
-    /// </summary>
-    public List<TElement> ToList()
+
+    #region query operators
+
+    public bool All(
+        Func<TElement, bool> predicate)
     {
-        var list = new List<TElement>();
-        ForEach(list.Add);
-        return list;
+        return this.Aggregate(true, (all, value) => all && predicate(value));
     }
 
-    /// <summary>
-    /// Converts the <see cref="SpanQuery{TSpan, TElement}"/> to an array.
-    /// </summary>
-    public TElement[] ToArray()
+    public TAggregate Aggregate<TAggregate>(
+        TAggregate seed,
+        Func<TAggregate, TElement, TAggregate> func)
     {
-        return ToList().ToArray();
+        var result = seed;
+        ForEach(value => 
+        {
+            result = func(result, value);
+        });
+
+        return result;
     }
 
-#if false
-    /// <summary>
-    /// Gets the enumerator for this <see cref="SpanQuery{TSpan, TValue}"/>
-    /// </summary>
-    public IEnumerator<TElement> GetEnumerator()
+    public TAggregate Aggregate<TAggregate>(
+        Func<TAggregate, TElement, TAggregate> func)
     {
-        return ToList().GetEnumerator();
+        return Aggregate(default(TAggregate)!, func)!;
     }
-#endif
+
+    public bool Any()
+    {
+        var hasValue = false;
+        
+        ForEach(value =>
+        {
+            hasValue = true;
+            return false;
+        });
+
+        return hasValue;
+    }
+
+    public bool Any(
+        Func<TElement, bool> predicate)
+    {
+        return this.Where(predicate).Any();
+    }
 
     /// <summary>
     /// Converts the elements to the type <see cref="TType"/>.
@@ -107,249 +131,45 @@ public ref struct SpanQuery<TSpan, TElement>
         return this.Select(value => (TType)(object)value!);
     }
 
-    /// <summary>
-    /// Produces only the elements of type <see cref="TType"/>.
-    /// </summary>
-    public SpanQuery<TSpan, TType> OfType<TType>()
+    public SpanQuery<TSpan, TElement> Concat(
+        IEnumerable<TElement> elements)
     {
-        return this.Continue<TType>(
-            previousCreateAggregator => (aggregator, flusher) =>
+        return Continue<TElement>(
+            createAggregator => (pre, aggregator, post) =>
             {
-                int index = 0;
-                return previousCreateAggregator((value, _) =>
-                {
-                    if (value is TType tvalue)
+                int count = 0;
+                return createAggregator(
+                    pre,
+                    (value, _) =>
                     {
-                        if (!aggregator(tvalue, index))
+                        if (!aggregator(value, count))
                             return false;
-                        index++;
-                    }
+                        count++;
+                        return true;
+                    },
+                    () => 
+                    {
+                        foreach (var element in elements)
+                        {
+                            if (!aggregator(element, count))
+                                break;
+                            count++;
+                        }
 
-                    return true;
-                },
-                flusher
-                );
+                        post();
+                    });
             });
-    }
-}
 
-/// <summary>
-/// A function that creates a new aggregator and flushing functions 
-/// given the previous aggregator and flushing functions.
-/// </summary>
-/// <typeparam name="TValue1">The argument type of the previous aggregator function.</typeparam>
-/// <typeparam name="TValue2">The argument type of the created aggregator function.</typeparam>
-/// <param name="aggregator">The function that is called for each value of type <see cref="TValue"/>.</param>
-/// <param name="flusher">A function that is called after all items have been enumerated.</param>
-public delegate (Func<TValue2, int, bool>, Action) CreateAggregator<TValue1, TValue2>(
-    Func<TValue1, int, bool> aggregator,
-    Action flusher
-    );
-
-/// <summary>
-/// A function that creates a new <see cref="CreateAggregator{TValue1, TValue3}"/>
-/// from a prevous <see cref="CreateAggregator{TValue1, TValue2}"/>
-/// </summary>
-public delegate CreateAggregator<TValue1, TValue3> CreateCreateAggregator<TValue1, TValue2, TValue3>(
-    CreateAggregator<TValue2, TValue3> createAggregator
-    );
-
-public static class SpanQueryExtensions
-{
-    #region All
-    public static bool All<TSpan, TSource>(
-        this SpanQuery<TSpan, TSource> source,
-        Func<TSource, bool> predicate)
-    {
-        return source.Aggregate(true, (all, value) => all && predicate(value));
     }
 
-    public static bool All<TSource>(
-        this ReadOnlySpan<TSource> source,
-        Func<TSource, bool> predicate)
+    public bool Contains(
+        TElement value,
+        IEqualityComparer<TElement>? comparer = null)
     {
-        return AsQuery(source).All(predicate);
-    }
-
-    public static bool All<TSource>(
-        this Span<TSource> source,
-        Func<TSource, bool> predicate)
-    {
-        return All((ReadOnlySpan<TSource>)source, predicate);
-    }
-    #endregion
-
-    #region Aggregate
-    public static TAggregate Aggregate<TSpan, TSource, TAggregate>(
-        this SpanQuery<TSpan, TSource> source,
-        TAggregate seed,
-        Func<TAggregate, TSource, TAggregate> func)
-    {
-        var result = seed;
-        source.ForEach(value => result = func(result, value));
-        return result;
-    }
-
-    public static TAggregate Aggregate<TSpan, TSource, TAggregate>(
-        this SpanQuery<TSpan, TSource> source,
-        Func<TAggregate, TSource, TAggregate> func)
-    {
-        return Aggregate(source, default(TAggregate)!, func)!;
-    }
-
-    public static TAggregate Aggregate<TSource, TAggregate>(
-        this ReadOnlySpan<TSource> source,
-        TAggregate seed,
-        Func<TAggregate, TSource, TAggregate> func)
-    {
-        return AsQuery(source).Aggregate(seed, func);
-    }
-
-    public static TAggregate Aggregate<TSource, TAggregate>(
-        this Span<TSource> source,
-        TAggregate seed,
-        Func<TAggregate, TSource, TAggregate> func)
-    {
-        return Aggregate((ReadOnlySpan<TSource>)source, seed, func);
-    }
-    #endregion
-
-    #region Any
-    public static bool Any<TSpan, TSource>(
-        this SpanQuery<TSpan, TSource> source)
-    {
-        var hasValue = false;
-        source.ForEach(value =>
-        {
-            hasValue = true;
-            return false;
-        });
-        return hasValue;
-    }
-
-    public static bool Any<TSpan, TSource>(
-        this SpanQuery<TSpan, TSource> source,
-        Func<TSource, bool> predicate)
-    {
-        return source.Where(predicate).Any();
-    }
-
-    public static bool Any<TSource>(
-        this ReadOnlySpan<TSource> source)
-    {
-        return source.Length > 0;
-    }
-
-    public static bool Any<TSource>(
-        this ReadOnlySpan<TSource> source,
-        Func<TSource, bool> predicate)
-    {
-        return AsQuery(source).Any(predicate);
-    }
-
-    public static bool Any<TSource>(
-        this Span<TSource> source,
-        Func<TSource, bool> predicate)
-    {
-        return Any((ReadOnlySpan<TSource>)source, predicate);
-    }
-
-    public static bool Any<TSource>(
-        this Span<TSource> source)
-    {
-        return Any((ReadOnlySpan<TSource>)source);
-    }
-
-    #endregion
-
-    #region AsQuery
-    public static SpanQuery<TSource, TSource> AsQuery<TSource>(
-        this ReadOnlySpan<TSource> source)
-    {
-        return new SpanQuery<TSource, TSource>(
-            source,
-            (aggregator, flusher) => ((value, index) => aggregator(value, index), flusher)
-            );
-    }
-
-    public static SpanQuery<TSource, TSource> AsQuery<TSource>(
-        this Span<TSource> source)
-    {
-        return AsQuery((ReadOnlySpan<TSource>)source);
-    }
-
-    public static SpanQuery<TSource, TSource> AsSpanQuery<TSource>(
-        this TSource[] source)
-    {
-        return AsQuery((ReadOnlySpan<TSource>)source);
-    }
-
-    #endregion
-
-    #region Average
-
-    public static TSource Average<TSpan, TSource>(
-        this SpanQuery<TSpan, TSource> source)
-        where TSource : INumber<TSource>
-    {
-        var (total, count) = source.Aggregate(
-            (total: TSource.Zero, count: TSource.Zero), 
-            (acc, value) => (acc.total + value, acc.count + TSource.One)
-            );
-
-        return total / count;
-    }
-
-    public static TNumber Average<TSpan, TSource, TNumber>(
-        this SpanQuery<TSpan, TSource> source,
-        Func<TSource, TNumber> selector)
-        where TNumber : INumber<TNumber>
-    {
-        return source.Select(selector).Average();
-    }
-
-    public static TSource Average<TSource>(
-        this ReadOnlySpan<TSource> source)
-        where TSource : INumber<TSource>
-    {
-        return AsQuery(source).Average();
-    }
-
-    public static TSource Average<TSource>(
-        this Span<TSource> source)
-        where TSource : INumber<TSource>
-    {
-        return Average((ReadOnlySpan<TSource>)source);
-    }
-
-    public static TNumber Average<TSource, TNumber>(
-        this ReadOnlySpan<TSource> source,
-        Func<TSource, TNumber> selector)
-        where TNumber : INumber<TNumber>
-    {
-        return AsQuery(source).Average(selector);
-    }
-
-    public static TNumber Average<TSource, TNumber>(
-        this Span<TSource> source,
-        Func<TSource, TNumber> selector)
-        where TNumber : INumber<TNumber>
-    {
-        return Average((ReadOnlySpan<TSource>)source, selector);
-    }
-
-    #endregion
-
-    #region Contains
-    public static bool Contains<TSpan, TSource>(
-        this SpanQuery<TSpan, TSource> source,
-        TSource value,
-        IEqualityComparer<TSource>? comparer = null)
-    {
-        comparer ??= EqualityComparer<TSource>.Default;
+        comparer ??= EqualityComparer<TElement>.Default;
 
         var contains = false;
-        source.ForEach(val =>
+        ForEach(val =>
         {
             if (comparer.Equals(value, val))
             {
@@ -363,84 +183,83 @@ public static class SpanQueryExtensions
         return contains;
     }
 
-    public static bool Contains<TSource>(
-        this ReadOnlySpan<TSource> source,
-        TSource value,
-        IEqualityComparer<TSource>? comparer = null)
+    public int Count()
     {
-        comparer ??= EqualityComparer<TSource>.Default;
-        for (int i = 0; i < source.Length; i++)
+        int count = 0;
+        ForEach(value => count++);
+        return count;
+    }
+
+    public int Count(Func<TElement, bool> predicate)
+    {
+        int count = 0;
+        ForEach(value =>
         {
-            if (comparer.Equals(source[i], value))
-                return true;
-        }
-        return false;
+            if (predicate(value))
+                count++;
+        });
+        return count;
     }
 
-    public static bool Contains<TSource>(
-        this Span<TSource> source,
-        TSource value,
-        IEqualityComparer<TSource>? comparer = null)
+    public SpanQuery<TSpan, TElement?> DefaultIfEmpty()
     {
-        return Contains((ReadOnlySpan<TSource>)source, value, comparer);
-    }
-
-    #endregion
-
-    #region Count
-    public static int Count<TSpan, TSource>(
-        this SpanQuery<TSpan, TSource> source)
-    {
-        return source.Aggregate(0, (total, value) => total + 1);
-    }
-
-    public static int Count<TSpan, TSource>(
-        this SpanQuery<TSpan, TSource> source,
-        Func<TSource, bool> predicate)
-    {
-        return source.Where(predicate).Count();
-    }
-
-    public static int Count<TSource>(
-        this ReadOnlySpan<TSource> source)
-    {
-        return source.Length;
-    }
-
-    public static int Count<TSource>(
-        this ReadOnlySpan<TSource> source,
-        Func<TSource, bool> predicate)
-    {
-        return AsQuery(source).Count(predicate);
-    }
-
-    public static int Count<TSource>(
-        this Span<TSource> source)
-    {
-        return source.Length;
-    }
-
-    public static int Count<TSource>(
-        this Span<TSource> source,
-        Func<TSource, bool> predicate)
-    {
-        return AsQuery(source).Count(predicate);
-    }
-
-    #endregion
-
-    #region Distinct
-
-    public static SpanQuery<TSpan, TSource> Distinct<TSpan, TSource>(
-        this SpanQuery<TSpan, TSource> source,
-        IEqualityComparer<TSource>? comparer = null)
-    {
-        return source.Continue<TSource>(
-            innerFnGetAggregator => (aggregator, flusher) =>
+        return Continue<TElement?>(
+            createAggregator => (pre, aggregator, post) =>
             {
-                var hashset = new HashSet<TSource>(comparer ?? EqualityComparer<TSource>.Default);
-                var list = new List<TSource>();
-                return innerFnGetAggregator(
+                int count = 0;
+                return createAggregator(
+                    pre,
+                    (value, index) =>
+                    {
+                        count++;
+                        return aggregator(value, index);
+                    },
+                    () =>
+                    {
+                        // add default item if no items existed
+                        if (count == 0)
+                            aggregator(default, 0);
+
+                        post();
+                    });
+            });
+    }
+
+    public SpanQuery<TSpan, TElement> DefaultIfEmpty(
+        TElement defaultValue)
+    {
+        return Continue<TElement>(
+            createAggregator => (pre, aggregator, post) =>
+            {
+                int count = 0;
+                return createAggregator(
+                    pre,
+                    (value, index) =>
+                    {
+                        count++;
+                        return aggregator(value, index);
+                    },
+                    () =>
+                    {
+                        // add default item if no items existed
+                        if (count == 0)
+                            aggregator(defaultValue, 0);
+
+                        post();
+                    });
+            });
+    }
+
+    public SpanQuery<TSpan, TElement> Distinct(
+        IEqualityComparer<TElement>? comparer = null)
+    {
+        return Continue<TElement>(
+            createAggregator => (pre, aggregator, post) =>
+            {
+                var hashset = new HashSet<TElement>(comparer ?? EqualityComparer<TElement>.Default);
+                var list = new List<TElement>();
+                return createAggregator(
+                    pre,
                     (value, _) =>
                     {
                         if (hashset.Add(value))
@@ -455,40 +274,22 @@ public static class SpanQueryExtensions
                                 break;
                         }
 
-                        flusher();
+                        post();
                     });
             });
     }
 
-    public static SpanQuery<TSource, TSource> Distinct<TSource>(
-        this ReadOnlySpan<TSource> source,
-        IEqualityComparer<TSource>? comparer = null)
-    {
-        return source.AsQuery().Distinct(comparer);
-    }
-
-    public static SpanQuery<TSource, TSource> Distinct<TSource>(
-        this Span<TSource> source,
-        IEqualityComparer<TSource>? comparer = null)
-    {
-        return Distinct((ReadOnlySpan<TSource>)source, comparer);
-    }
-
-    #endregion
-
-    #region DistinctBy
-
-    public static SpanQuery<TSpan, TSource> DistinctBy<TSpan, TSource, TBy>(
-        this SpanQuery<TSpan, TSource> source,
-        Func<TSource, TBy> bySelector,
+    public SpanQuery<TSpan, TElement> DistinctBy<TBy>(
+        Func<TElement, TBy> bySelector,
         IEqualityComparer<TBy>? comparer = null)
     {
-        return source.Continue<TSource>(
-            previousFnGetAggregator => (aggregator, flusher) =>
+        return Continue<TElement>(
+            createAggregator => (pre, aggregator, post) =>
             {
                 var hashset = new HashSet<TBy>(comparer ?? EqualityComparer<TBy>.Default);
-                var list = new List<TSource>();
-                return previousFnGetAggregator(
+                var list = new List<TElement>();
+                return createAggregator(
+                    pre,
                     (value, _) =>
                     {
                         if (hashset.Add(bySelector(value)))
@@ -503,161 +304,226 @@ public static class SpanQueryExtensions
                                 break;
                         }
 
-                        flusher();
+                        post();
                     });
             });
     }
 
-    public static SpanQuery<TSource, TSource> DistinctBy<TSource, TBy>(
-        this ReadOnlySpan<TSource> source,
-        Func<TSource, TBy> bySelector,
-        IEqualityComparer<TBy>? comparer = null)
+    public TElement ElementAt(int index)
     {
-        return source.AsQuery().DistinctBy(bySelector, comparer);
+        if (index >= 0)
+        {
+            bool found = false;
+            TElement element = default!;
+
+            ForEach((value, _index) =>
+            {
+                if (index == _index)
+                {
+                    found = true;
+                    element = value;
+                    return false;
+                }
+
+                return true;
+            });
+
+            if (found)
+                return element;
+        }
+
+        throw new ArgumentOutOfRangeException(nameof(index));
     }
 
-    public static SpanQuery<TSource, TSource> DistinctBy<TSource, TBy>(
-        this Span<TSource> source,
-        Func<TSource, TBy> bySelector,
-        IEqualityComparer<TBy>? comparer = null)
+    public TElement ElementAt(Index index)
     {
+        if (!index.IsFromEnd)
+            return ElementAt(index.Value);
 
-        return DistinctBy((ReadOnlySpan<TSource>)source, bySelector, comparer);
+        var length = index.Value;
+        var queue = new Queue<TElement>(length);
+
+        if (length > 0)
+        {
+            int count = 0;
+            ForEach((value, _index) =>
+            {
+                if (queue.Count == length)
+                    queue.Dequeue();
+
+                queue.Enqueue(value);
+
+                count++;
+                return true;
+            });
+
+            if (queue.Count == length)
+            {
+                return queue.Dequeue();
+            }
+        }
+
+        throw new ArgumentOutOfRangeException(nameof(index));
     }
 
-    #endregion
+    public TElement? ElementAtOrDefault(int index)
+    {
+        TElement? element = default;
 
-    #region First
-    public static TSource First<TSpan, TSource>(
-        this SpanQuery<TSpan, TSource> source)
+        if (index >= 0)
+        {
+            ForEach((value, _index) =>
+            {
+                if (index == _index)
+                {
+                    element = value;
+                    return false;
+                }
+
+                return true;
+            });
+        }
+
+        return element;
+    }
+
+    public TElement? ElementAtOrDefault(Index index)
+    {
+        if (!index.IsFromEnd)
+            return ElementAtOrDefault(index.Value);
+
+        var length = index.Value;
+        var queue = new Queue<TElement>(length);
+
+        if (length > 0)
+        {
+            int count = 0;
+            ForEach((value, _index) =>
+            {
+                if (queue.Count == length)
+                    queue.Dequeue();
+
+                queue.Enqueue(value);
+
+                count++;
+                return true;
+            });
+
+            if (queue.Count == length && length > 0)
+            {
+                return queue.Dequeue();
+            }
+        }
+
+        return default;
+    }
+
+    public SpanQuery<TSpan, TElement> Except(
+        IEnumerable<TElement> elements,
+        IEqualityComparer<TElement>? comparer = null)
+    {
+        return Continue<TElement>(
+            createAggregator => (pre, aggregator, post) =>
+            {
+                var hashset = elements.ToHashSet(comparer ?? EqualityComparer<TElement>.Default);
+                var index = 0;
+                return createAggregator(
+                    pre,
+                    (value, _) =>
+                    {
+                        if (!hashset.Contains(value))
+                        {
+                            if (!aggregator(value, index))
+                                return false;
+                            index++;
+                        }
+                        return true;
+                    },
+                    post
+                    );
+            });
+    }
+
+    public SpanQuery<TSpan, TElement> ExceptBy<TKey>(
+        IEnumerable<TKey> keys,
+        Func<TElement, TKey> keySelector,
+        IEqualityComparer<TKey>? comparer = null)
+    {
+        return Continue<TElement>(
+            createAggregator => (pre, aggregator, post) =>
+            {
+                var excludedKeys = keys.ToHashSet(comparer ?? EqualityComparer<TKey>.Default);
+                var index = 0;
+                return createAggregator(
+                    pre,
+                    (value, _) =>
+                    {
+                        var key = keySelector(value);
+                        if (!excludedKeys.Contains(key))
+                        {
+                            if (!aggregator(value, index))
+                                return false;
+                            index++;
+                        }
+                        return true;
+                    },
+                    post
+                    );
+            });
+    }
+
+    public TElement First()
     {
         bool found = false;
-        TSource first = default!;
+        TElement first = default!;
 
-        source.ForEach(value =>
+        ForEach(value =>
         {
-            if (!found)
-            {
-                first = value;
-                found = true;
-                return false;
-            }
-
-            return true;
+            first = value;
+            found = true;
+            return false;
         });
 
-        return found 
-            ? first 
-            : throw new InvalidOperationException("Sequence contains no elements");
+        return found
+            ? first
+            : throw Exceptions.GetSequenceIsEmptyOrNotSatisfied();
     }
 
-    public static TSource First<TSpan, TSource>(
-        this SpanQuery<TSpan, TSource> source,
-        Func<TSource, bool> predicate)
+    public TElement First(Func<TElement, bool> predicate)
     {
-        return source.Where(predicate).First();
+        return this.Where(predicate).First();
     }
 
-    public static TSource First<TSource>(
-        this ReadOnlySpan<TSource> source)
+    public TElement? FirstOrDefault()
     {
-        return source.Length > 0 
-            ? source[0] 
-            : throw new InvalidOperationException("Sequence contains no elements");
-    }
+        TElement? first = default;
 
-    public static TSource First<TSource>(
-        this ReadOnlySpan<TSource> source,
-        Func<TSource, bool> predicate)
-    {
-        return AsQuery(source).First(predicate);
-    }
-
-    public static TSource First<TSource>(
-        this Span<TSource> source)
-    {
-        return First((ReadOnlySpan<TSource>)source);
-    }
-
-    public static TSource First<TSource>(
-        this Span<TSource> source,
-        Func<TSource, bool> predicate)
-    {
-        return First((ReadOnlySpan<TSource>)source, predicate);
-    }
-    #endregion
-
-    #region FirstOrDefault
-    public static TSource FirstOrDefault<TSpan, TSource>(
-        this SpanQuery<TSpan, TSource> source)
-    {
-        bool found = false;
-        TSource? first = default;
-
-        source.ForEach(value =>
+        ForEach(value =>
         {
-            if (!found)
-            {
-                first = value;
-                found = true;
-                return false;
-            }
-
-            return true;
+            first = value;
+            return false;
         });
 
         return first!;
     }
 
-    public static TSource FirstOrDefault<TSpan, TSource>(
-        this SpanQuery<TSpan, TSource> source,
-        Func<TSource, bool> predicate)
+    public TElement? FirstOrDefault(
+        Func<TElement, bool> predicate)
     {
-        return source.Where(predicate).FirstOrDefault();
+        return this.Where(predicate).FirstOrDefault();
     }
 
-    public static TSource FirstOrDefault<TSource>(
-        this ReadOnlySpan<TSource> source)
-    {
-        return source.Length > 0
-            ? source[0]
-            : default!;
-    }
-
-    public static TSource FirstOrDefault<TSource>(
-        this ReadOnlySpan<TSource> source,
-        Func<TSource, bool> predicate)
-    {
-        return AsQuery(source).FirstOrDefault(predicate);
-    }
-
-    public static TSource FirstOrDefault<TSource>(
-        this Span<TSource> source)
-    {
-        return FirstOrDefault((ReadOnlySpan<TSource>)source);
-    }
-
-    public static TSource FirstOrDefault<TSource>(
-        this Span<TSource> source,
-        Func<TSource, bool> predicate)
-    {
-        return FirstOrDefault((ReadOnlySpan<TSource>)source, predicate);
-    }
-    #endregion
-
-    #region GroupBy
-
-    public static SpanQuery<TSpan, IGrouping<TKey, TSource>> GroupBy<TSpan, TSource, TKey>(
-        this SpanQuery<TSpan, TSource> source,
-        Func<TSource, TKey> keySelector,
+    public SpanQuery<TSpan, IGrouping<TKey, TElement>> GroupBy<TKey>(
+        Func<TElement, TKey> keySelector,
         IEqualityComparer<TKey>? comparer = null)
         where TKey : notnull
     {
-        return source.Continue<IGrouping<TKey, TSource>>(
-            previousFnGetAggregator => (aggregator, flusher) =>
+        return Continue<IGrouping<TKey, TElement>>(
+            createAggregator => (pre, aggregator, post) =>
             {
-                var list = new List<TSource>();
-                return previousFnGetAggregator(
+                var list = new List<TElement>();
+                return createAggregator(
+                    pre,
                     (value, _) =>
                     {
                         list.Add(value);
@@ -674,364 +540,644 @@ public static class SpanQueryExtensions
                             index++;
                         }
 
-                        flusher();
+                        post();
                     });
             });
     }
 
-    public static SpanQuery<TSource, IGrouping<TKey, TSource>> GroupBy<TSource, TKey>(
-        this ReadOnlySpan<TSource> source,
-        Func<TSource, TKey> keySelector,
-        IEqualityComparer<TKey>? comparer = null)
-        where TKey : notnull
+    public SpanQuery<TSpan, TElement> Intersect(
+        IEnumerable<TElement> elements,
+        IEqualityComparer<TElement>? comparer = null)
     {
-        return AsQuery(source).GroupBy(keySelector, comparer);
-    }
-
-    public static SpanQuery<TSource, IGrouping<TKey, TSource>> GroupBy<TSource, TKey>(
-        this Span<TSource> source,
-        Func<TSource, TKey> keySelector,
-        IEqualityComparer<TKey>? comparer = null)
-        where TKey : notnull
-    {
-        return GroupBy((ReadOnlySpan<TSource>)source, keySelector, comparer);
-    }
-
-    #endregion
-
-    #region Select
-    public static SpanQuery<TSpan, TResult> Select<TSpan, TSource, TResult>(
-        this SpanQuery<TSpan, TSource> source, 
-        Func<TSource, TResult> selector)
-    {
-        return source.Continue<TResult>(
-            previousCreateAggregator => (aggregator, flusher) =>
+        return Continue<TElement>(
+            createAggregator => (pre, aggregator, post) =>
             {
-                return previousCreateAggregator((value, index) =>
-                {
-                    var mappedValue = selector(value);
-                    if (!aggregator(mappedValue, index))
-                        return false;
-                    return true;
-                },
-                flusher
-                );
+                var hashset = elements.ToHashSet(comparer ?? EqualityComparer<TElement>.Default);
+                var index = 0;
+                return createAggregator(
+                    pre,
+                    (value, _) =>
+                    {
+                        if (hashset.Contains(value))
+                        {
+                            if (!aggregator(value, index))
+                                return false;
+                            index++;
+                        }
+                        return true;
+                    },
+                    post
+                    );
             });
     }
 
-    public static SpanQuery<TSpan, TResult> Select<TSpan, TResult>(
-        this Span<TSpan> source, 
-        Func<TSpan, TResult> selector)
+    public SpanQuery<TSpan, TElement> IntersectBy<TKey>(
+        IEnumerable<TKey> keys,
+        Func<TElement, TKey> keySelector,
+        IEqualityComparer<TKey>? comparer = null)
     {
-        return Select((ReadOnlySpan<TSpan>)source, selector);
-    }
-
-    public static SpanQuery<TSpan, TResult> Select<TSpan, TResult>(
-        this ReadOnlySpan<TSpan> source, 
-        Func<TSpan, TResult> selector)
-    {
-        return AsQuery(source).Select(selector);
-    }
-
-    public static SpanQuery<TSpan, TResult> Select<TSpan, TSource, TResult>(
-        this SpanQuery<TSpan, TSource> source,
-        Func<TSource, int, TResult> selector)
-    {
-        return source.Continue<TResult>(
-            previousCreateAggregator => (aggregator, flusher) =>
+        return Continue<TElement>(
+            createAggregator => (pre, aggregator, post) =>
             {
-                return previousCreateAggregator((value, index) =>
-                {
-                    var mappedValue = selector(value, index);
-                    if (!aggregator(mappedValue, index))
-                        return false;
-                    return true;
-                },
-                flusher
-                );
+                var includedKeys = keys.ToHashSet(comparer ?? EqualityComparer<TKey>.Default);
+                var index = 0;
+                return createAggregator(
+                    pre,
+                    (value, _) =>
+                    {
+                        var key = keySelector(value);
+                        if (includedKeys.Contains(key))
+                        {
+                            if (!aggregator(value, index))
+                                return false;
+                            index++;
+                        }
+                        return true;
+                    },
+                    post
+                    );
             });
     }
 
-    public static SpanQuery<TSpan, TResult> Select<TSpan, TResult>(
-        this ReadOnlySpan<TSpan> source,
-        Func<TSpan, int, TResult> selector)
+    public SpanQuery<TSpan, TResult> Join<TInner, TKey, TResult>(
+        IEnumerable<TInner> inner, 
+        Func<TElement, TKey> outerKeySelector, 
+        Func<TInner, TKey> innerKeySelector, 
+        Func<TElement, TInner, TResult> resultSelector, 
+        IEqualityComparer<TKey>? comparer = null)
     {
-        return AsQuery(source).Select(selector);
+        return this.Continue<TResult>(
+            createAggregator => (pre, aggregator, post) =>
+            {
+                var list = new List<TElement>();
+                return createAggregator(
+                    pre,
+                    (value, _) =>
+                    {
+                        list.Add(value);
+                        return true;
+                    },
+                    () =>
+                    {
+                        int index = 0;
+                        foreach (var item in list.Join(inner, outerKeySelector, innerKeySelector, resultSelector, comparer))
+                        {
+                            if (!aggregator(item, index))
+                                break;
+                            index++;
+                        }
+
+                        post();
+                    });
+            });
     }
 
-    public static SpanQuery<TSpan, TResult> Select<TSpan, TResult>(
-        this Span<TSpan> source,
-        Func<TSpan, int, TResult> selector)
+    public TElement Last(
+        Func<TElement, bool> predicate)
     {
-        return Select((ReadOnlySpan<TSpan>)source, selector);
+        bool hasElement = false;
+        TElement element = default!;
+        
+        ForEach(value =>
+        {
+            if (predicate(value))
+            {
+                element = value;
+                hasElement = true;
+            }
+        });
+
+        if (!hasElement)
+            throw Exceptions.GetSequenceIsEmpty();
+
+        return element;
     }
 
-    #endregion
-
-    #region SelectMany
-
-    public static SpanQuery<TSpan, TMany> SelectMany<TSpan, TSource, TMany>(
-        this SpanQuery<TSpan, TSource> source,
-        Func<TSource, IEnumerable<TMany>> selector)
+    public TElement Last()
     {
-        return source.Continue<TMany>(
-            previousCreateAggregator => (aggregator, flusher) =>
+        return Last(x => true);
+    }
+
+    public TElement? LastOrDefault(
+        Func<TElement, bool> predicate)
+    {
+        TElement? element = default;
+
+        ForEach(value =>
+        {
+            if (predicate(value))
+            {
+                element = value;
+            }
+        });
+
+        return element;
+    }
+
+    public TElement? LastOrDefault()
+    {
+        return LastOrDefault(x => true);
+    }
+
+    /// <summary>
+    /// Produces only the elements of type <see cref="TType"/>.
+    /// </summary>
+    public SpanQuery<TSpan, TType> OfType<TType>()
+    {
+        return this.Continue<TType>(
+            createAggregator => (pre, aggregator, post) =>
             {
                 int index = 0;
-                return previousCreateAggregator((value, _) =>
-                {
-                    foreach (var item in selector(value))
+                return createAggregator(
+                    pre,
+                    (value, _) =>
                     {
-                        if (!aggregator(item, index))
-                            return false;
-                        index++;
-                    }
+                        if (value is TType tvalue)
+                        {
+                            if (!aggregator(tvalue, index))
+                                return false;
+                            index++;
+                        }
 
-                    return true;
-                },
-                flusher
+                        return true;
+                    },
+                    post
+                    );
+            });
+    }
+
+    public SpanQuery<TSpan, TElement> Prepend(
+        TElement element)
+    {
+        return this.Continue<TElement>(
+            createAggregator => (pre, aggregator, post) =>
+            {
+                return createAggregator(
+                    () => aggregator(element, 0),
+                    (value, index) => aggregator(value, index+1),
+                    post
+                    );
+            });
+    }
+
+    public SpanQuery<TSpan, TElement> Reverse()
+    {
+        return this.Continue<TElement>(
+            createAggregator => (pre, aggregator, post) =>
+            {
+                var list = new List<TElement>();
+                return createAggregator(
+                    pre,
+                    (value, _) =>
+                    {
+                        list.Add(value);
+                        return true;
+                    },
+                    () =>
+                    {
+                        int index = 0;
+                        for (int i = list.Count - 1; i >= 0; i--)
+                        {
+                            if (!aggregator(list[i], index))
+                                break;
+                            index++;
+                        }
+
+                        post();
+                    });
+            });
+    }
+
+    public SpanQuery<TSpan, TResult> Select<TResult>(
+        Func<TElement, TResult> selector)
+    {
+        return Continue<TResult>(
+            createAggregator => (pre, aggregator, post) =>
+            {
+                return createAggregator(
+                    pre,
+                    (value, index) =>
+                    {
+                        var mappedValue = selector(value);
+                        if (!aggregator(mappedValue, index))
+                            return false;
+                        return true;
+                    },
+                    post
                 );
             });
     }
 
-    public static SpanQuery<TSource, TSelector> SelectMany<TSource, TSelector>(
-        this ReadOnlySpan<TSource> source,
-        Func<TSource, IEnumerable<TSelector>> selector)
+    public SpanQuery<TSpan, TResult> Select<TResult>(
+        Func<TElement, int, TResult> selector)
     {
-        return AsQuery(source).SelectMany(selector);
+        return Continue<TResult>(
+            createAggregator => (pre, aggregator, post) =>
+            {
+                return createAggregator(
+                    pre,
+                    (value, index) =>
+                    {
+                        var mappedValue = selector(value, index);
+                        if (!aggregator(mappedValue, index))
+                            return false;
+                        return true;
+                    },
+                    post
+                );
+            });
     }
 
-    public static SpanQuery<TSource, TSelector> SelectMany<TSource, TSelector>(
-        this Span<TSource> source,
-        Func<TSource, IEnumerable<TSelector>> selector)
+    public SpanQuery<TSpan, TMany> SelectMany<TMany>(
+        Func<TElement, IEnumerable<TMany>> selector)
     {
-        return SelectMany((ReadOnlySpan<TSource>)source, selector);
+        return Continue<TMany>(
+            createAggregator => (pre, aggregator, post) =>
+            {
+                int index = 0;
+                return createAggregator(
+                    pre,
+                    (value, _) =>
+                    {
+                        foreach (var item in selector(value))
+                        {
+                            if (!aggregator(item, index))
+                                return false;
+                            index++;
+                        }
+
+                        return true;
+                    },
+                    post
+                );
+            });
     }
 
-    #endregion
-
-    #region Single
-    public static TSource Single<TSpan, TSource>(
-        this SpanQuery<TSpan, TSource> source)
+    public TElement Single()
     {
         int count = 0;
-        TSource first = default!;
+        TElement element = default!;
 
-        source.ForEach(value =>
+        ForEach(value =>
         {
             if (count == 0)
-                first = value;
+                element = value;
             count++;
             return count < 2;
         });
 
-        return count == 1
-            ? first
-            : throw new InvalidOperationException("Sequence contains no elements or more than one element");
+        if (count == 0 || count > 1)
+            throw Exceptions.GetSequenceContainsMoreThanOneElementOrEmpty();
+        return element;
     }
 
-    public static TSource Single<TSpan, TSource>(
-        this SpanQuery<TSpan, TSource> source,
-        Func<TSource, bool> predicate)
+    public TElement Single(
+        Func<TElement, bool> predicate)
     {
-        return source.Where(predicate).Single();
+        return this.Where(predicate).Single();
     }
 
-    public static TSource Single<TSource>(
-        this ReadOnlySpan<TSource> source)
-    {
-        return source.Length == 1
-            ? source[0]
-            : throw new InvalidOperationException("Sequence contains no elements or more than one element");
-    }
-
-    public static TSource Single<TSource>(
-        this ReadOnlySpan<TSource> source,
-        Func<TSource, bool> predicate)
-    {
-        return AsQuery(source).Single(predicate);
-    }
-
-    public static TSource Single<TSource>(
-        this Span<TSource> source,
-        Func<TSource, bool> predicate)
-    {
-        return Single((ReadOnlySpan<TSource>)source, predicate);
-    }
-
-    public static TSource Single<TSource>(
-        this Span<TSource> source)
-    {
-        return Single((ReadOnlySpan<TSource>)source);
-    }
-
-    #endregion
-
-    #region SingleOrDefault
-    public static TSource SingleOrDefault<TSpan, TSource>(
-        this SpanQuery<TSpan, TSource> source)
+    public TElement? SingleOrDefault()
     {
         int count = 0;
-        TSource? first = default;
+        TElement? element = default;
 
-        source.ForEach(value =>
+        ForEach(value =>
         {
             if (count == 0)
-                first = value;
+                element = value;
             count++;
 
             return count < 2;
         });
 
         if (count > 1)
-            throw new InvalidOperationException("Sequence contains more than one element");
+            throw Exceptions.GetSequenceContainsMoreThanOneElement();
 
-
-        return first!;
+        return element!;
     }
 
-    public static TSource SingleOrDefault<TSpan, TSource>(
-        this SpanQuery<TSpan, TSource> source,
-        Func<TSource, bool> predicate)
+    public TElement? SingleOrDefault(
+        Func<TElement, bool> predicate)
     {
-        return source.Where(predicate).SingleOrDefault()!;
+        return this.Where(predicate).SingleOrDefault();
     }
 
-    public static TSource SingleOrDefault<TSource>(
-        this ReadOnlySpan<TSource> source)
+    public SpanQuery<TSpan, TElement> Skip(int count)
     {
-        return source.Length == 1 ? source[0]
-            : source.Length > 1 ? throw new InvalidOperationException("Sequence contains more than one element")
-            : default!;
-    }
-
-    public static TSource SingleOrDefault<TSource>(
-        this ReadOnlySpan<TSource> source,
-        Func<TSource, bool> predicate)
-    {
-        return AsQuery(source).SingleOrDefault(predicate);
-    }
-
-    public static TSource SingleOrDefault<TSource>(
-        this Span<TSource> source)
-    {
-        return SingleOrDefault((ReadOnlySpan<TSource>)source);
-    }
-
-    public static TSource SingleOrDefault<TSource>(
-        this Span<TSource> source,
-        Func<TSource, bool> predicate)
-    {
-        return SingleOrDefault((ReadOnlySpan<TSource>)source, predicate);
-    }
-    #endregion
-
-    #region Sum
-    public static TNumber Sum<T, TNumber>(
-        this SpanQuery<T, TNumber> source)
-        where TNumber : INumber<TNumber>
-    {
-        return source.Aggregate(TNumber.Zero, (total, value) => total + value);
-    }
-
-    public static T Sum<T>(
-        this ReadOnlySpan<T> source)
-        where T : INumber<T>
-    {
-        return AsQuery(source).Sum();
-    }
-
-    public static T Sum<T>(
-        this Span<T> source)
-        where T : INumber<T>
-    {
-        return Sum((ReadOnlySpan<T>)source);
-    }
-
-    public static TNumber Sum<TSpan, TSource, TNumber>(
-        this SpanQuery<TSpan, TSource> source,
-        Func<TSource, TNumber> selector)
-        where TNumber : INumber<TNumber>
-    {
-        return source.Select(selector).Sum();
-    }
-
-    public static TNumber Sum<TSpan, TNumber>(
-        this ReadOnlySpan<TSpan> source,
-        Func<TSpan, TNumber> selector)
-        where TNumber : INumber<TNumber>
-    {
-        return source.Select(selector).Sum();
-    }
-
-    public static TNumber Sum<TSpan, TNumber>(
-        this Span<TSpan> source,
-        Func<TSpan, TNumber> selector)
-        where TNumber : INumber<TNumber>
-    {
-        return Sum((ReadOnlySpan<TSpan>)source, selector);
-    }
-    #endregion
-
-    #region Where
-    public static SpanQuery<TSpan, TSource> Where<TSpan, TSource>(
-        this SpanQuery<TSpan, TSource> source,
-        Func<TSource, int, bool> predicate)
-    {
-        return source.Continue<TSource>(
-            previousCreateAggregator => (aggregator, flusher) =>
+        return Continue<TElement>(
+            createAggregator => (pre, aggregator, post) =>
             {
-                int filteredIndex = 0;
-                return previousCreateAggregator((value, index) =>
-                {
-                    if (predicate(value, index))
+                int index = 0;
+                return createAggregator(
+                    pre,
+                    (value, _) =>
                     {
-                        if (!aggregator(value, filteredIndex))
-                            return false;
-                        filteredIndex++;
-                    }
+                        if (index >= count)
+                        {
+                            if (!aggregator(value, index - count))
+                                return false;
+                        }
 
-                    return true;
-                },
-                flusher
+                        index++;
+                        return true;
+                    },
+                    post
                 );
             });
     }
 
-    public static SpanQuery<T, T> Where<T>(
-        this ReadOnlySpan<T> source,
-        Func<T, int, bool> predicate)
+    public SpanQuery<TSpan, TElement> SkipLast(int count)
     {
-        return AsQuery(source).Where(predicate);
+        return Continue<TElement>(
+            createAggregator => (pre, aggregator, post) =>
+            {
+                var queue = new Queue<TElement>(count);
+                int index = 0;
+                return createAggregator(
+                    pre,
+                    (value, _) =>
+                    {
+                        if (queue.Count == count)
+                        {
+                            if (!aggregator(queue.Dequeue(), index - count))
+                                return false;
+                        }
+
+                        queue.Enqueue(value);
+                        index++;
+                        return true;
+                    },
+                    post
+                );
+            });
     }
 
-    public static SpanQuery<T, T> Where<T>(
-        this Span<T> source,
-        Func<T, int, bool> predicate)
+    public SpanQuery<TSpan, TElement> SkipWhile(
+        Func<TElement, int, bool> predicate)
     {
-        return Where((ReadOnlySpan<T>)source, predicate);
+        return Continue<TElement>(
+            createAggregator => (pre, aggregator, post) =>
+            {
+                int index = 0;
+                bool skip = true;
+                return createAggregator(
+                    pre,
+                    (value, _) =>
+                    {
+                        if (skip)
+                        {
+                            if (!predicate(value, index))
+                                skip = false;
+                        }
+
+                        if (!skip)
+                        {
+                            if (!aggregator(value, index))
+                                return false;
+                        }
+
+                        index++;
+                        return true;
+                    },
+                    post
+                );
+            });
     }
 
-    public static SpanQuery<TSpan, TSource> Where<TSpan, TSource>(
-        this SpanQuery<TSpan, TSource> source,
-        Func<TSource, bool> predicate)
+    public SpanQuery<TSpan, TElement> SkipWhile(
+        Func<TElement, bool> predicate)
     {
-        return Where(source, (value, index) => predicate(value));
+        return SkipWhile((value, index) => predicate(value));
     }
 
-    public static SpanQuery<T, T> Where<T>(
-        this ReadOnlySpan<T> source,
-        Func<T, bool> predicate)
+    public SpanQuery<TSpan, TElement> Take(int count)
     {
-        return AsQuery(source).Where(predicate);
+        return Continue<TElement>(
+            createAggregator => (pre, aggregator, post) =>
+            {
+                int index = 0;
+                return createAggregator(
+                    pre,
+                    (value, _) =>
+                    {
+                        if (index < count)
+                        {
+                            if (!aggregator(value, index))
+                                return false;
+                        }
+
+                        index++;
+                        return true;
+                    },
+                    post
+                );
+            });
     }
 
-    public static SpanQuery<T, T> Where<T>(
-        this Span<T> source,
-        Func<T, bool> predicate)
+    public SpanQuery<TSpan, TElement> TakeLast(int count)
     {
-        return Where((ReadOnlySpan<T>)source, predicate);
+        return Continue<TElement>(
+            createAggregator => (pre, aggregator, post) =>
+            {
+                var queue = new Queue<TElement>(count);
+                return createAggregator(
+                    pre,
+                    (value, _) =>
+                    {
+                        queue.Enqueue(value);
+                        if (queue.Count > count)
+                            queue.Dequeue();
+                        return true;
+                    },
+                    () =>
+                    {
+                        int index = 0;
+                        while (queue.Count > 0)
+                        {
+                            if (!aggregator(queue.Dequeue(), index))
+                                break;
+                            index++;
+                        }
+
+                        post();
+                    }
+                );
+            });
+    }
+
+    public SpanQuery<TSpan, TElement> TakeWhile(
+        Func<TElement, int, bool> predicate)
+    {
+        return Continue<TElement>(
+            createAggregator => (pre, aggregator, post) =>
+            {
+                int index = 0;
+                return createAggregator(
+                    pre,
+                    (value, _) =>
+                    {
+                        if (predicate(value, index))
+                        {
+                            if (!aggregator(value, index))
+                                return false;
+                        }
+                        else
+                        {
+                            return false;
+                        }
+
+                        index++;
+                        return true;
+                    },
+                    post
+                );
+            });
+    }
+
+    public SpanQuery<TSpan, TElement> TakeWhile(
+        Func<TElement, bool> predicate)
+    {
+        return TakeWhile((value, index) => predicate(value));
+    }
+
+    /// <summary>
+    /// Converts the <see cref="SpanQuery{TSpan, TElement}"/> to an array.
+    /// </summary>
+    public TElement[] ToArray()
+    {
+        return ToList().ToArray();
+    }
+
+    /// <summary>
+    /// Converts the <see cref="SpanQuery{TSpan, TElement}"/> to a <see cref="Dictionary{TKey, TValue}"/>.
+    /// </summary>
+    public Dictionary<TKey, TValue> ToDictionary<TKey, TValue>(
+        Func<TElement, TKey> keySelector,
+        Func<TElement, TValue> valueSelector, 
+        IEqualityComparer<TKey>? keyComparer = null)
+        where TKey : notnull
+    {
+        return this.ToList().ToDictionary(keySelector, valueSelector, keyComparer);
+    }
+
+    /// <summary>
+    /// Converts the <see cref="SpanQuery{TSpan, TElement}"/> to a <see cref="Dictionary{TKey, TElement}"/>.
+    /// </summary>
+    public Dictionary<TKey, TElement> ToDictionary<TKey>(
+        Func<TElement, TKey> keySelector,
+        IEqualityComparer<TKey>? keyComparer = null)
+        where TKey : notnull
+    {
+        return this.ToList().ToDictionary(keySelector, keyComparer);
+    }
+
+    /// <summary>
+    /// Converts the <see cref="SpanQuery{TSpan, TElement}"/> to a <see cref="HashSet{TElement}"/>
+    /// </summary>
+    public HashSet<TElement> ToHashSet(
+        IEqualityComparer<TElement>? comparer = null)
+    {
+        var hashSet = new HashSet<TElement>();
+        ForEach(hashSet.Add);
+        return hashSet;
+    }
+
+    /// <summary>
+    /// Converts the <see cref="SpanQuery{TSpan, TElement}"/> to a <see cref="List{T}"/>
+    /// </summary>
+    public List<TElement> ToList()
+    {
+        var list = new List<TElement>();
+        ForEach(list.Add);
+        return list;
+    }
+
+    public ILookup<TKey, TValue> ToLookup<TKey, TValue>(
+        Func<TElement, TKey> keySelector,
+        Func<TElement, TValue> valueSelector,
+        IEqualityComparer<TKey>? comparer = null)
+        where TKey : notnull
+    {
+        return this.ToList().ToLookup(keySelector, valueSelector, comparer);
+    }
+
+    public ILookup<TKey, TElement> ToLookup<TKey>(
+        Func<TElement, TKey> keySelector,
+        IEqualityComparer<TKey>? comparer = null)
+        where TKey : notnull
+    {
+        return this.ToList().ToLookup(keySelector, comparer);
+    }
+
+    public SpanQuery<TSpan, TElement> Union(
+        IEnumerable<TElement> elements,
+        IEqualityComparer<TElement>? comparer = null)
+    {
+        return Concat(elements).Distinct(comparer);
+    }
+
+    public SpanQuery<TSpan, TElement> UnionBy<TKey>(
+        IEnumerable<TElement> elements,
+        Func<TElement, TKey> keySelector,
+        IEqualityComparer<TKey>? keyComparer = null)
+    {
+        return Concat(elements).DistinctBy(keySelector, keyComparer);
+    }
+
+    public SpanQuery<TSpan, TElement> Where(
+        Func<TElement, int, bool> predicate)
+    {
+        return Continue<TElement>(
+            createAggregator => (pre, aggregator, post) =>
+            {
+                int filteredIndex = 0;
+                return createAggregator(
+                    pre,
+                    (value, index) =>
+                    {
+                        if (predicate(value, index))
+                        {
+                            if (!aggregator(value, filteredIndex))
+                                return false;
+                            filteredIndex++;
+                        }
+
+                        return true;
+                    },
+                    post
+                );
+            });
+    }
+
+    public SpanQuery<TSpan, TElement> Where(
+        Func<TElement, bool> predicate)
+    {
+        return Where((value, index) => predicate(value));
     }
 
     #endregion
 }
+
+/// <summary>
+/// A function that creates a new aggregator and flushing functions 
+/// given the previous aggregator and flushing functions.
+/// </summary>
+/// <typeparam name="TValue1">The argument type of the previous aggregator function.</typeparam>
+/// <typeparam name="TValue2">The argument type of the created aggregator function.</typeparam>
+/// <param name="pre">A function called before any items are enumerated.</param>
+/// <param name="aggregator">The function that is called for each item enumerated.</param>
+/// <param name="post">A function that is called after all items are enumerated.</param>
+public delegate (Func<bool> pre, Func<TValue2, int, bool> aggregator, Action post) CreateAggregator<TValue1, TValue2>(
+    Func<bool> pre,
+    Func<TValue1, int, bool> aggregator,
+    Action post
+    );
+
+/// <summary>
+/// A function that creates a new <see cref="CreateAggregator{TValue1, TValue3}"/>
+/// from a prevous <see cref="CreateAggregator{TValue1, TValue2}"/>
+/// </summary>
+public delegate CreateAggregator<TValue1, TValue3> CreateCreateAggregator<TValue1, TValue2, TValue3>(
+    CreateAggregator<TValue2, TValue3> createAggregator
+    );
