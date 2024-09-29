@@ -74,6 +74,12 @@ namespace Tests
                 OneToTen.Chunk(3).ToArray(),
                 OneToTen.AsSpanQuery().Chunk(3).ToArray()
                 );
+
+            // chunk indices
+            AssertAreEquivalent(
+                OneToTen.Chunk(3).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().Chunk(3).Select((x, i) => i).ToArray()
+                );
         }
 
         [TestMethod]
@@ -82,6 +88,12 @@ namespace Tests
             AssertAreEquivalent(
                 OneToTen.Concat(OneToTen).ToArray(),
                 OneToTen.AsSpanQuery().Concat(OneToTen).ToArray()
+                );
+
+            // post concat indices
+            AssertAreEquivalent(
+                OneToTen.Concat(OneToTen).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().Concat(OneToTen).Select((x, i) => i).ToArray()
                 );
         }
 
@@ -110,8 +122,25 @@ namespace Tests
         {
             int[] none = [];
             int[] one = [1];
-            AssertAreEquivalent([0], none.AsSpanQuery().DefaultIfEmpty().ToArray());
-            AssertAreEquivalent([1], one.AsSpanQuery().DefaultIfEmpty().ToArray());
+            AssertAreEquivalent(
+                none.DefaultIfEmpty().ToArray(),
+                none.AsSpanQuery().DefaultIfEmpty().ToArray()
+                );
+            AssertAreEquivalent(
+                one.DefaultIfEmpty().ToArray(),
+                one.AsSpanQuery().DefaultIfEmpty().ToArray()
+                );
+
+            // post op indices
+            AssertAreEquivalent(
+                none.DefaultIfEmpty().Select((x, i) => i).ToArray(),
+                none.AsSpanQuery().DefaultIfEmpty().Select((x, i) => i).ToArray()
+                );
+
+            AssertAreEquivalent(
+                one.DefaultIfEmpty().Select((x, i) => i).ToArray(),
+                one.AsSpanQuery().DefaultIfEmpty().Select((x, i) => i).ToArray()
+                );
         }
 
         [TestMethod]
@@ -119,8 +148,25 @@ namespace Tests
         {
             int[] none = [];
             int[] one = [1];
-            AssertAreEquivalent([2], none.AsSpanQuery().DefaultIfEmpty(2).ToArray());
-            AssertAreEquivalent([1], one.AsSpanQuery().DefaultIfEmpty(2).ToArray());
+
+            AssertAreEquivalent(
+                none.DefaultIfEmpty(2).ToArray(),
+                none.AsSpanQuery().DefaultIfEmpty(2).ToArray()
+                );
+            AssertAreEquivalent(
+                one.DefaultIfEmpty(2).ToArray(),
+                one.AsSpanQuery().DefaultIfEmpty(2).ToArray()
+                );
+
+            // post op indices
+            AssertAreEquivalent(
+                none.DefaultIfEmpty(2).Select((x, i) => i).ToArray(),
+                none.AsSpanQuery().DefaultIfEmpty(2).Select((x, i) => i).ToArray()
+                );
+            AssertAreEquivalent(
+                one.DefaultIfEmpty(2).Select((x, i) => i).ToArray(),
+                one.AsSpanQuery().DefaultIfEmpty(2).Select((x, i) => i).ToArray()
+                );
         }
 
         [TestMethod]
@@ -128,15 +174,41 @@ namespace Tests
         {
             int[] nondistinct = [1, 2, 3, 4, 5, 1, 2, 3, 4, 5];
             string[] nondistinct2 = ["one", "One", "Two", "TWO"];
-            AssertAreEquivalent([1, 2, 3, 4, 5], nondistinct.AsSpanQuery().Distinct().ToArray());
-            AssertAreEquivalent(["one", "Two"], nondistinct2.AsSpanQuery().Distinct(StringComparer.OrdinalIgnoreCase).ToArray());
+            
+            AssertAreEquivalent(
+                nondistinct.Distinct().ToArray(),
+                nondistinct.AsSpanQuery().Distinct().ToArray()
+                );
+            AssertAreEquivalent(
+                nondistinct2.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+                nondistinct2.AsSpanQuery().Distinct(StringComparer.OrdinalIgnoreCase).ToArray()
+                );
+
+            // post op indices
+            AssertAreEquivalent(
+                nondistinct.Distinct().Select((x, i) => i).ToArray(),
+                nondistinct.AsSpanQuery().Distinct().Select((x, i) => i).ToArray()
+                );
+            AssertAreEquivalent(
+                nondistinct2.Distinct(StringComparer.OrdinalIgnoreCase).Select((x, i) => i).ToArray(),
+                nondistinct2.AsSpanQuery().Distinct(StringComparer.OrdinalIgnoreCase).Select((x, i) => i).ToArray()
+                );
         }
 
         [TestMethod]
         public void Test_DistinctBy()
         {
             string[] nondistinct = ["one", "two", "three", "four", "five"];
-            AssertAreEquivalent(["one", "three", "four"], nondistinct.AsSpanQuery().DistinctBy(x => x.Length).ToArray());
+            AssertAreEquivalent(
+                nondistinct.DistinctBy(x => x.Length).ToArray(),
+                nondistinct.AsSpanQuery().DistinctBy(x => x.Length).ToArray()
+                );
+
+            // post op indices
+            AssertAreEquivalent(
+                nondistinct.DistinctBy(x => x.Length).Select((x, i) => i).ToArray(),
+                nondistinct.AsSpanQuery().DistinctBy(x => x.Length).Select((x, i) => i).ToArray()
+                );
         }
 
         [TestMethod]
@@ -186,6 +258,12 @@ namespace Tests
                 OneToTen.Except([2, 4, 6]).ToArray(),
                 OneToTen.AsSpanQuery().Except([2, 4, 6]).ToArray()
                 );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.Except([2, 4, 6]).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().Except([2, 4, 6]).Select((x, i) => i).ToArray()
+                );
         }
 
         [TestMethod]
@@ -194,6 +272,12 @@ namespace Tests
             AssertAreEquivalent(
                 OneToTen.ExceptBy([2, 4, 6], x => x * 2).ToArray(),
                 OneToTen.AsSpanQuery().ExceptBy([2, 4, 6], x => x * 2).ToArray()
+                );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.ExceptBy([2, 4, 6], x => x * 2).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().ExceptBy([2, 4, 6], x => x * 2).Select((x, i) => i).ToArray()
                 );
         }
 
@@ -234,6 +318,12 @@ namespace Tests
                 OneToTen.GroupBy(x => x / 2).ToArray(),
                 OneToTen.AsSpanQuery().GroupBy(x => x / 2).ToArray()
                 );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.GroupBy(x => x / 2).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().GroupBy(x => x / 2).Select((x, i) => i).ToArray()
+                );
         }
 
         [TestMethod]
@@ -242,6 +332,12 @@ namespace Tests
             AssertAreEquivalent(
                 OneToTen.GroupJoin(OneToTen, x => x, y => y, (x, ygroup) => x + ygroup.Sum()).ToArray(),
                 OneToTen.AsSpanQuery().GroupJoin(OneToTen, x => x, y => y, (x, ygroup) => x + ygroup.Sum()).ToArray()
+                );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.GroupJoin(OneToTen, x => x, y => y, (x, ygroup) => x + ygroup.Sum()).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().GroupJoin(OneToTen, x => x, y => y, (x, ygroup) => x + ygroup.Sum()).Select((x, i) => i).ToArray()
                 );
         }
 
@@ -252,6 +348,12 @@ namespace Tests
                 OneToTen.Intersect([2, 4, 6]).ToArray(),
                 OneToTen.AsSpanQuery().Intersect([2, 4, 6]).ToArray()
                 );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.Intersect([2, 4, 6]).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().Intersect([2, 4, 6]).Select((x, i) => i).ToArray()
+                );
         }
 
         [TestMethod]
@@ -261,6 +363,12 @@ namespace Tests
                 OneToTen.IntersectBy([2, 4, 6], x => x * 2).ToArray(),
                 OneToTen.AsSpanQuery().IntersectBy([2, 4, 6], x => x * 2).ToArray()
                 );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.IntersectBy([2, 4, 6], x => x * 2).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().IntersectBy([2, 4, 6], x => x * 2).Select((x, i) => i).ToArray()
+                );
         }
 
         [TestMethod]
@@ -269,6 +377,12 @@ namespace Tests
             AssertAreEquivalent(
                 OneToTen.Join(OneToTen, x => x, y => y, (x, y) => x = y).ToArray(),
                 OneToTen.AsSpanQuery().Join(OneToTen, x => x, y => y, (x, y) => x = y).ToArray()
+                );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.Join(OneToTen, x => x, y => y, (x, y) => x = y).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().Join(OneToTen, x => x, y => y, (x, y) => x = y).Select((x, i) => i).ToArray()
                 );
         }
 
@@ -360,6 +474,12 @@ namespace Tests
                 values.OfType<string>().ToArray(),
                 values.AsSpanQuery().OfType<string>().ToArray()
                 );
+
+            // post op indices
+            AssertAreEquivalent(
+                values.OfType<double>().Select((x, i) => i).ToArray(),
+                values.AsSpanQuery().OfType<double>().Select((x, i) => i).ToArray()
+                );
         }
 
         [TestMethod]
@@ -368,6 +488,12 @@ namespace Tests
             AssertAreEquivalent(
                 OneToTen.Order().ToArray(),
                 OneToTen.AsSpanQuery().Order().ToArray()
+                );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.Order().Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().Order().Select((x, i) => i).ToArray()
                 );
         }
 
@@ -378,6 +504,12 @@ namespace Tests
                 OneToTen.OrderDescending().ToArray(),
                 OneToTen.AsSpanQuery().OrderDescending().ToArray()
                 );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.OrderDescending().Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().OrderDescending().Select((x, i) => i).ToArray()
+                );
         }
 
         [TestMethod]
@@ -386,6 +518,12 @@ namespace Tests
             AssertAreEquivalent(
                 OneToTen.OrderBy(x => -x).ToArray(),
                 OneToTen.AsSpanQuery().OrderBy(x => -x).ToArray()
+                );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.OrderBy(x => -x).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().OrderBy(x => -x).Select((x, i) => i).ToArray()
                 );
         }
 
@@ -396,6 +534,12 @@ namespace Tests
                 OneToTen.OrderBy(x => x).ToArray(),
                 OneToTen.AsSpanQuery().OrderBy(x => x).ToArray()
                 );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.OrderBy(x => x).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().OrderBy(x => x).Select((x, i) => i).ToArray()
+                );
         }
 
         [TestMethod]
@@ -405,6 +549,22 @@ namespace Tests
                 OneToTen.Prepend(0).ToArray(),
                 OneToTen.AsSpanQuery().Prepend(0).ToArray()
                 );
+
+            AssertAreEquivalent(
+                OneToTen.Prepend(0).Prepend(-1).ToArray(),
+                OneToTen.AsSpanQuery().Prepend(0).Prepend(-1).ToArray()
+                );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.Prepend(0).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().Prepend(0).Select((x, i) => i).ToArray()
+                );
+
+            AssertAreEquivalent(
+                OneToTen.Prepend(0).Prepend(-1).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().Prepend(0).Prepend(-1).Select((x, i) => i).ToArray()
+                );
         }
 
         [TestMethod]
@@ -413,6 +573,12 @@ namespace Tests
             AssertAreEquivalent(
                 OneToTen.Reverse().ToArray(),
                 OneToTen.AsSpanQuery().Reverse().ToArray()
+                );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.Reverse().Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().Reverse().Select((x, i) => i).ToArray()
                 );
         }
 
@@ -441,6 +607,12 @@ namespace Tests
                 OneToTen.SelectMany(x => new[] { x, x }).ToArray(),
                 OneToTen.AsSpanQuery().SelectMany(x => new[] { x, x }).ToArray()
                 );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.SelectMany(x => new[] { x, x }).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().SelectMany(x => new[] { x, x }).Select((x, i) => i).ToArray()
+                );
         }
 
         [TestMethod]
@@ -449,6 +621,12 @@ namespace Tests
             AssertAreEquivalent(
                 OneToTen.SelectMany((x, i) => new[] { x, i }).ToArray(),
                 OneToTen.AsSpanQuery().SelectMany((x, i) => new[] { x, i }).ToArray()
+                );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.SelectMany((x, i) => new[] { x, i }).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().SelectMany((x, i) => new[] { x, i }).Select((x, i) => i).ToArray()
                 );
         }
 
@@ -459,6 +637,12 @@ namespace Tests
                 OneToTen.SelectMany(x => new[] { x, x }, (x, y) => x + y).ToArray(),
                 OneToTen.AsSpanQuery().SelectMany(x => new[] { x, x }, (x, y) => x + y).ToArray()
                 );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.SelectMany(x => new[] { x, x }, (x, y) => x + y).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().SelectMany(x => new[] { x, x }, (x, y) => x + y).Select((x, i) => i).ToArray()
+                );
         }
 
         [TestMethod]
@@ -468,8 +652,13 @@ namespace Tests
                 OneToTen.SelectMany((x, i) => new[] { x, i }, (x, y) => x + y).ToArray(),
                 OneToTen.AsSpanQuery().SelectMany((x, i) => new[] { x, i }, (x, y) => x + y).ToArray()
                 );
-        }
 
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.SelectMany((x, i) => new[] { x, i }, (x, y) => x + y).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().SelectMany((x, i) => new[] { x, i }, (x, y) => x + y).Select((x, i) => i).ToArray()
+                );
+        }
 
         [TestMethod]
         public void Test_Single()
@@ -510,6 +699,66 @@ namespace Tests
         }
 
         [TestMethod]
+        public void Test_Skip()
+        {
+            AssertAreEquivalent(
+                OneToTen.Skip(5).ToArray(),
+                OneToTen.AsSpanQuery().Skip(5).ToArray()
+                );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.Skip(5).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().Skip(5).Select((x, i) => i).ToArray()
+                );
+        }
+
+        [TestMethod]
+        public void Test_SkipLast()
+        {
+            AssertAreEquivalent(
+                OneToTen.SkipLast(5).ToArray(),
+                OneToTen.AsSpanQuery().SkipLast(5).ToArray()
+                );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.SkipLast(5).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().SkipLast(5).Select((x, i) => i).ToArray()
+                );
+        }
+
+        [TestMethod]
+        public void Test_SkipWhile()
+        {
+            AssertAreEquivalent(
+                OneToTen.SkipWhile(x => x < 6).ToArray(),
+                OneToTen.AsSpanQuery().SkipWhile(x => x < 6).ToArray()
+                );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.SkipWhile(x => x < 6).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().SkipWhile(x => x < 6).Select((x, i) => i).ToArray()
+                );
+        }
+
+        [TestMethod]
+        public void Test_SkipWhile_Index()
+        {
+            AssertAreEquivalent(
+                OneToTen.SkipWhile((x, i) => i < 6).ToArray(),
+                OneToTen.AsSpanQuery().SkipWhile((x, i) => i < 6).ToArray()
+                );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.SkipWhile((x, i) => i < 6).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().SkipWhile((x, i) => i < 6).Select((x, i) => i).ToArray()
+                );
+        }
+
+        [TestMethod]
         public void Test_Sum()
         {
             Assert.AreEqual(55, OneToTen.AsSpanQuery().Sum());
@@ -522,47 +771,17 @@ namespace Tests
         }
 
         [TestMethod]
-        public void Test_Skip()
-        {
-            AssertAreEquivalent(
-                OneToTen.Skip(5).ToArray(),
-                OneToTen.AsSpanQuery().Skip(5).ToArray()
-                );
-        }
-
-        [TestMethod]
-        public void Test_SkipLast()
-        {
-            AssertAreEquivalent(
-                OneToTen.SkipLast(5).ToArray(),
-                OneToTen.AsSpanQuery().SkipLast(5).ToArray()
-                );
-        }
-
-        [TestMethod]
-        public void Test_SkipWhile()
-        {
-            AssertAreEquivalent(
-                OneToTen.SkipWhile(x => x < 6).ToArray(),
-                OneToTen.AsSpanQuery().SkipWhile(x => x < 6).ToArray()
-                );
-        }
-
-        [TestMethod]
-        public void Test_SkipWhile_Index()
-        {
-            AssertAreEquivalent(
-                OneToTen.SkipWhile((x, i) => i < 6).ToArray(),
-                OneToTen.AsSpanQuery().SkipWhile((x, i) => i < 6).ToArray()
-                );
-        }
-
-        [TestMethod]
         public void Test_Take()
         {
             AssertAreEquivalent(
                 OneToTen.Take(5).ToArray(),
                 OneToTen.AsSpanQuery().Take(5).ToArray()
+                );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.Take(5).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().Take(5).Select((x, i) => i).ToArray()
                 );
         }
 
@@ -573,6 +792,12 @@ namespace Tests
                 OneToTen.TakeLast(5).ToArray(),
                 OneToTen.AsSpanQuery().TakeLast(5).ToArray()
                 );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.TakeLast(5).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().TakeLast(5).Select((x, i) => i).ToArray()
+                );
         }
 
         [TestMethod]
@@ -581,6 +806,12 @@ namespace Tests
             AssertAreEquivalent(
                 OneToTen.TakeWhile(x => x < 6).ToArray(),
                 OneToTen.AsSpanQuery().TakeWhile(x => x < 6).ToArray()
+                );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.TakeWhile(x => x < 6).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().TakeWhile(x => x < 6).Select((x, i) => i).ToArray()
                 );
         }
 
@@ -591,6 +822,12 @@ namespace Tests
                 OneToTen.TakeWhile((x, i) => i < 6).ToArray(),
                 OneToTen.AsSpanQuery().TakeWhile((x, i) => i < 6).ToArray()
                 );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.TakeWhile((x, i) => i < 6).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().TakeWhile((x, i) => i < 6).Select((x, i) => i).ToArray()
+                );
         }
 
         [TestMethod]
@@ -599,6 +836,12 @@ namespace Tests
             AssertAreEquivalent(
                 OneToTen.OrderBy(x => x & 2).ThenBy(x => x & 1).ToArray(),
                 OneToTen.AsSpanQuery().OrderBy(x => x & 2).ThenBy(x => x & 1).ToArray()
+                );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.OrderBy(x => x & 2).ThenBy(x => x & 1).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().OrderBy(x => x & 2).ThenBy(x => x & 1).Select((x, i) => i).ToArray()
                 );
         }
 
@@ -609,6 +852,12 @@ namespace Tests
                 OneToTen.OrderBy(x => x & 2).ThenByDescending(x => x & 1).ToArray(),
                 OneToTen.AsSpanQuery().OrderBy(x => x & 2).ThenByDescending(x => x & 1).ToArray()
                 );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.OrderBy(x => x & 2).ThenByDescending(x => x & 1).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().OrderBy(x => x & 2).ThenByDescending(x => x & 1).Select((x, i) => i).ToArray()
+                );
         }
 
         [TestMethod]
@@ -617,6 +866,12 @@ namespace Tests
             AssertAreEquivalent(
                 OneToTen.Union([2, 11, 15]).ToArray(),
                 OneToTen.AsSpanQuery().Union([2, 11, 15]).ToArray()
+                );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.Union([2, 11, 15]).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().Union([2, 11, 15]).Select((x, i) => i).ToArray()
                 );
         }
 
@@ -627,18 +882,42 @@ namespace Tests
                 OneToTen.UnionBy([2, 11, 15], x => x % 2).ToArray(),
                 OneToTen.AsSpanQuery().UnionBy([2, 11, 15], x => x % 2).ToArray()
                 );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.UnionBy([2, 11, 15], x => x % 2).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().UnionBy([2, 11, 15], x => x % 2).Select((x, i) => i).ToArray()
+                );
         }
 
         [TestMethod]
         public void Test_Where()
         {
-            AssertAreEquivalent([6, 7, 8, 9, 10], OneToTen.AsSpanQuery().Where(x => x > 5).ToArray());
+            AssertAreEquivalent(
+                OneToTen.Where(x => x > 5).ToArray(),
+                OneToTen.AsSpanQuery().Where(x => x > 5).ToArray()
+                );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.Where(x => x > 5).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().Where(x => x > 5).Select((x, i) => i).ToArray()
+                );
         }
 
         [TestMethod]
         public void Test_Where_Index()
         {
-            AssertAreEquivalent([7, 8, 9, 10], OneToTen.AsSpanQuery().Where((x, i) => i > 5).ToArray());
+            AssertAreEquivalent(
+                OneToTen.Where((x, i) => i > 5).ToArray(),
+                OneToTen.AsSpanQuery().Where((x, i) => i > 5).ToArray()
+                );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.Where((x, i) => i > 5).ToArray(),
+                OneToTen.AsSpanQuery().Where((x, i) => i > 5).ToArray()
+                );
         }
     }
 }

@@ -174,13 +174,13 @@ public ref struct SpanQuery<TSpan, TElement>
                     {
                         if (chunk.Count > 0)
                         {
-                            aggregator(chunk.ToArray(), chunkIndex + 1);
+                            if (!aggregator(chunk.ToArray(), chunkIndex + 1))
+                                return;
                         }
 
                         post();
                     });
             });
-
     }
 
     public SpanQuery<TSpan, TElement> Concat(
@@ -189,23 +189,21 @@ public ref struct SpanQuery<TSpan, TElement>
         return Continue<TElement>(
             createAggregator => (pre, aggregator, post) =>
             {
-                int count = 0;
+                int nextIndex = -1;
                 return createAggregator(
                     pre,
                     (value, _) =>
                     {
-                        if (!aggregator(value, count))
-                            return false;
-                        count++;
-                        return true;
+                        nextIndex++;
+                        return aggregator(value, nextIndex);
                     },
                     () => 
                     {
                         foreach (var element in elements)
                         {
-                            if (!aggregator(element, count))
-                                break;
-                            count++;
+                            nextIndex++;
+                            if (!aggregator(element, nextIndex))
+                                return;
                         }
 
                         post();
@@ -270,7 +268,10 @@ public ref struct SpanQuery<TSpan, TElement>
                     {
                         // add default item if no items existed
                         if (count == 0)
-                            aggregator(default, 0);
+                        {
+                            if (!aggregator(default, 0))
+                                return;
+                        }                           
 
                         post();
                     });
@@ -295,7 +296,10 @@ public ref struct SpanQuery<TSpan, TElement>
                     {
                         // add default item if no items existed
                         if (count == 0)
-                            aggregator(defaultValue, 0);
+                        {
+                            if (!aggregator(defaultValue, 0))
+                                return;
+                        }
 
                         post();
                     });
@@ -323,7 +327,7 @@ public ref struct SpanQuery<TSpan, TElement>
                         for (int i = 0; i < list.Count; i++)
                         {
                             if (!aggregator(list[i], i))
-                                break;
+                                return;
                         }
 
                         post();
@@ -353,7 +357,7 @@ public ref struct SpanQuery<TSpan, TElement>
                         for (int i = 0; i < list.Count; i++)
                         {
                             if (!aggregator(list[i], i))
-                                break;
+                                return;
                         }
 
                         post();
@@ -478,16 +482,16 @@ public ref struct SpanQuery<TSpan, TElement>
             createAggregator => (pre, aggregator, post) =>
             {
                 var hashset = elements.ToHashSet(comparer ?? EqualityComparer<TElement>.Default);
-                var index = 0;
+                var nextIndex = -1;
                 return createAggregator(
                     pre,
                     (value, _) =>
                     {
                         if (!hashset.Contains(value))
                         {
-                            if (!aggregator(value, index))
+                            nextIndex++;
+                            if (!aggregator(value, nextIndex))
                                 return false;
-                            index++;
                         }
                         return true;
                     },
@@ -505,7 +509,7 @@ public ref struct SpanQuery<TSpan, TElement>
             createAggregator => (pre, aggregator, post) =>
             {
                 var excludedKeys = keys.ToHashSet(comparer ?? EqualityComparer<TKey>.Default);
-                var index = 0;
+                var nextIndex = -1;
                 return createAggregator(
                     pre,
                     (value, _) =>
@@ -513,9 +517,9 @@ public ref struct SpanQuery<TSpan, TElement>
                         var key = keySelector(value);
                         if (!excludedKeys.Contains(key))
                         {
-                            if (!aggregator(value, index))
+                            nextIndex++;
+                            if (!aggregator(value, nextIndex))
                                 return false;
-                            index++;
                         }
                         return true;
                     },
@@ -584,12 +588,13 @@ public ref struct SpanQuery<TSpan, TElement>
                     () =>
                     {
                         var groups = list.GroupBy(keySelector, comparer);
-                        int index = 0;
+                        int nextIndex = -1;
+
                         foreach (var group in groups)
                         {
-                            if (!aggregator(group, index))
-                                break;
-                            index++;
+                            nextIndex++;
+                            if (!aggregator(group, nextIndex))
+                                return;
                         }
 
                         post();
@@ -617,13 +622,14 @@ public ref struct SpanQuery<TSpan, TElement>
                     },
                     () =>
                     {
-                        int resultIndex = 0;
+                        int nextResultIndex = -1;
                         var results = outerList.GroupJoin(inner, outerKeySelector, innerKeySelector, resultSelector, comparer);
+
                         foreach (var result in results)
                         {
-                            if (!aggregator(result, resultIndex))
-                                break;
-                            resultIndex++;
+                            nextResultIndex++;
+                            if (!aggregator(result, nextResultIndex))
+                                return;
                         }
 
                         post();
@@ -639,16 +645,16 @@ public ref struct SpanQuery<TSpan, TElement>
             createAggregator => (pre, aggregator, post) =>
             {
                 var hashset = elements.ToHashSet(comparer ?? EqualityComparer<TElement>.Default);
-                var index = 0;
+                var nextIndex = -1;
                 return createAggregator(
                     pre,
                     (value, _) =>
                     {
                         if (hashset.Contains(value))
                         {
-                            if (!aggregator(value, index))
+                            nextIndex++;
+                            if (!aggregator(value, nextIndex))
                                 return false;
-                            index++;
                         }
                         return true;
                     },
@@ -666,7 +672,7 @@ public ref struct SpanQuery<TSpan, TElement>
             createAggregator => (pre, aggregator, post) =>
             {
                 var includedKeys = keys.ToHashSet(comparer ?? EqualityComparer<TKey>.Default);
-                var index = 0;
+                var nextIndex = -1;
                 return createAggregator(
                     pre,
                     (value, _) =>
@@ -674,9 +680,9 @@ public ref struct SpanQuery<TSpan, TElement>
                         var key = keySelector(value);
                         if (includedKeys.Contains(key))
                         {
-                            if (!aggregator(value, index))
+                            nextIndex++;
+                            if (!aggregator(value, nextIndex))
                                 return false;
-                            index++;
                         }
                         return true;
                     },
@@ -705,12 +711,12 @@ public ref struct SpanQuery<TSpan, TElement>
                     },
                     () =>
                     {
-                        int index = 0;
+                        int nextIndex = -1;
                         foreach (var item in list.Join(inner, outerKeySelector, innerKeySelector, resultSelector, comparer))
                         {
-                            if (!aggregator(item, index))
-                                break;
-                            index++;
+                            nextIndex++;
+                            if (!aggregator(item, nextIndex))
+                                return;
                         }
 
                         post();
@@ -838,12 +844,10 @@ public ref struct SpanQuery<TSpan, TElement>
                     () =>
                     {
                         list.Sort(fullComparer);
-                        int index = 0;
-                        foreach (var item in list)
+                        for (int i = 0; i < list.Count; i++)
                         {
-                            if (!aggregator(item, index))
-                                break;
-                            index++;
+                            if (!aggregator(list[i], i))
+                                return;
                         }
 
                         post();
@@ -891,16 +895,16 @@ public ref struct SpanQuery<TSpan, TElement>
         return this.Continue<TType>(
             createAggregator => (pre, aggregator, post) =>
             {
-                int index = 0;
+                int nextIndex = -1;
                 return createAggregator(
                     pre,
                     (value, _) =>
                     {
                         if (value is TType tvalue)
                         {
-                            if (!aggregator(tvalue, index))
+                            nextIndex++;
+                            if (!aggregator(tvalue, nextIndex))
                                 return false;
-                            index++;
                         }
 
                         return true;
@@ -917,7 +921,7 @@ public ref struct SpanQuery<TSpan, TElement>
             createAggregator => (pre, aggregator, post) =>
             {
                 return createAggregator(
-                    () => aggregator(element, 0),
+                    () => pre() && aggregator(element, 0),
                     (value, index) => aggregator(value, index+1),
                     post
                     );
@@ -939,12 +943,10 @@ public ref struct SpanQuery<TSpan, TElement>
                     },
                     () =>
                     {
-                        int index = 0;
-                        for (int i = list.Count - 1; i >= 0; i--)
+                        for (int i = list.Count - 1, resultIndex = 0; i >= 0; i--, resultIndex++)
                         {
-                            if (!aggregator(list[i], index))
-                                break;
-                            index++;
+                            if (!aggregator(list[i], resultIndex))
+                                return;
                         }
 
                         post();
@@ -998,16 +1000,16 @@ public ref struct SpanQuery<TSpan, TElement>
         return Continue<TResult>(
             createAggregator => (pre, aggregator, post) =>
             {
-                int resultIndex = 0;
+                int resultIndex = -1;
                 return createAggregator(
                     pre,
                     (value, valueIndex) =>
                     {
                         foreach (var item in selector(value, valueIndex))
                         {
+                            resultIndex++;
                             if (!aggregator(item, resultIndex))
                                 return false;
-                            resultIndex++;
                         }
 
                         return true;
@@ -1030,17 +1032,17 @@ public ref struct SpanQuery<TSpan, TElement>
         return Continue<TResult>(
             createAggregator => (pre, aggregator, post) =>
             {
-                int resultIndex = 0;
+                int resultIndex = -1;
                 return createAggregator(
                     pre,
                     (value, valueIndex) =>
                     {
                         foreach (var item in collectionSelector(value, valueIndex))
                         {
+                            resultIndex++;
                             var result = resultSelector(value, item);
                             if (!aggregator(result, resultIndex))
                                 return false;
-                            resultIndex++;
                         }
 
                         return true;
@@ -1163,11 +1165,11 @@ public ref struct SpanQuery<TSpan, TElement>
         return Continue<TElement>(
             createAggregator => (pre, aggregator, post) =>
             {
-                int index = 0;
+                int nextIndex = -1;
                 bool skip = true;
                 return createAggregator(
                     pre,
-                    (value, _) =>
+                    (value, index) =>
                     {
                         if (skip)
                         {
@@ -1177,11 +1179,11 @@ public ref struct SpanQuery<TSpan, TElement>
 
                         if (!skip)
                         {
-                            if (!aggregator(value, index))
+                            nextIndex++;
+                            if (!aggregator(value, nextIndex))
                                 return false;
                         }
 
-                        index++;
                         return true;
                     },
                     post
@@ -1200,18 +1202,18 @@ public ref struct SpanQuery<TSpan, TElement>
         return Continue<TElement>(
             createAggregator => (pre, aggregator, post) =>
             {
-                int index = 0;
+                int nextIndex = -1;
                 return createAggregator(
                     pre,
-                    (value, _) =>
+                    (value, index) =>
                     {
                         if (index < count)
                         {
-                            if (!aggregator(value, index))
+                            nextIndex++;
+                            if (!aggregator(value, nextIndex))
                                 return false;
                         }
 
-                        index++;
                         return true;
                     },
                     post
@@ -1236,12 +1238,12 @@ public ref struct SpanQuery<TSpan, TElement>
                     },
                     () =>
                     {
-                        int index = 0;
+                        int nextIndex = -1;
                         while (queue.Count > 0)
                         {
-                            if (!aggregator(queue.Dequeue(), index))
-                                break;
-                            index++;
+                            nextIndex++;
+                            if (!aggregator(queue.Dequeue(), nextIndex))
+                                return;
                         }
 
                         post();
@@ -1256,14 +1258,15 @@ public ref struct SpanQuery<TSpan, TElement>
         return Continue<TElement>(
             createAggregator => (pre, aggregator, post) =>
             {
-                int index = 0;
+                int nextIndex = -1;
                 return createAggregator(
                     pre,
-                    (value, _) =>
+                    (value, index) =>
                     {
                         if (predicate(value, index))
                         {
-                            if (!aggregator(value, index))
+                            nextIndex++;
+                            if (!aggregator(value, nextIndex))
                                 return false;
                         }
                         else
@@ -1271,7 +1274,6 @@ public ref struct SpanQuery<TSpan, TElement>
                             return false;
                         }
 
-                        index++;
                         return true;
                     },
                     post
@@ -1413,16 +1415,16 @@ public ref struct SpanQuery<TSpan, TElement>
         return Continue<TElement>(
             createAggregator => (pre, aggregator, post) =>
             {
-                int filteredIndex = 0;
+                int filteredIndex = -1;
                 return createAggregator(
                     pre,
                     (value, index) =>
                     {
                         if (predicate(value, index))
                         {
+                            filteredIndex++;
                             if (!aggregator(value, filteredIndex))
                                 return false;
-                            filteredIndex++;
                         }
 
                         return true;
@@ -1439,40 +1441,4 @@ public ref struct SpanQuery<TSpan, TElement>
     }
 
     #endregion
-}
-
-/// <summary>
-/// A function that creates a new aggregator and flushing functions 
-/// given the previous aggregator and flushing functions.
-/// </summary>
-/// <typeparam name="TValue1">The argument type of the previous aggregator function.</typeparam>
-/// <typeparam name="TValue2">The argument type of the created aggregator function.</typeparam>
-/// <param name="pre">A function called before any items are enumerated.</param>
-/// <param name="aggregator">The function that is called for each item enumerated.</param>
-/// <param name="post">A function that is called after all items are enumerated.</param>
-public delegate (Func<bool> pre, Func<TValue2, int, bool> aggregator, Action post) CreateAggregator<TValue1, TValue2>(
-    Func<bool> pre,
-    Func<TValue1, int, bool> aggregator,
-    Action post
-    );
-
-/// <summary>
-/// A function that creates a new <see cref="CreateAggregator{TValue1, TValue3}"/>
-/// from a prevous <see cref="CreateAggregator{TValue1, TValue2}"/>
-/// </summary>
-public delegate CreateAggregator<TValue1, TValue3> CreateCreateAggregator<TValue1, TValue2, TValue3>(
-    CreateAggregator<TValue2, TValue3> createAggregator
-    );
-
-internal class NoopCreateAggregator<TElement>
-{
-    public static readonly NoopCreateAggregator<TElement> Instance = new NoopCreateAggregator<TElement>();
-
-    public (Func<bool> pre, Func<TElement, int, bool> aggregator, Action post) Create(
-        Func<bool> pre,
-        Func<TElement, int, bool> aggregator,
-        Action post)
-    {
-        return (pre, aggregator, post);
-    }
 }
