@@ -41,7 +41,7 @@ public ref struct SpanQuery<TSpan, TElement>
             for (int i = 0; i < _span.Length; i++)
             {
                 if (!aggregator(_span[i], i))
-                    break;
+                    return; // abort
             }
         }
 
@@ -175,7 +175,7 @@ public ref struct SpanQuery<TSpan, TElement>
                         if (chunk.Count > 0)
                         {
                             if (!aggregator(chunk.ToArray(), chunkIndex + 1))
-                                return;
+                                return; // abort
                         }
 
                         post();
@@ -203,7 +203,7 @@ public ref struct SpanQuery<TSpan, TElement>
                         {
                             nextIndex++;
                             if (!aggregator(element, nextIndex))
-                                return;
+                                return; // abort
                         }
 
                         post();
@@ -270,7 +270,7 @@ public ref struct SpanQuery<TSpan, TElement>
                         if (count == 0)
                         {
                             if (!aggregator(default, 0))
-                                return;
+                                return; // abort
                         }                           
 
                         post();
@@ -298,7 +298,7 @@ public ref struct SpanQuery<TSpan, TElement>
                         if (count == 0)
                         {
                             if (!aggregator(defaultValue, 0))
-                                return;
+                                return; // abort
                         }
 
                         post();
@@ -327,7 +327,7 @@ public ref struct SpanQuery<TSpan, TElement>
                         for (int i = 0; i < list.Count; i++)
                         {
                             if (!aggregator(list[i], i))
-                                return;
+                                return; // abort
                         }
 
                         post();
@@ -357,7 +357,7 @@ public ref struct SpanQuery<TSpan, TElement>
                         for (int i = 0; i < list.Count; i++)
                         {
                             if (!aggregator(list[i], i))
-                                return;
+                                return; // abort
                         }
 
                         post();
@@ -594,7 +594,7 @@ public ref struct SpanQuery<TSpan, TElement>
                         {
                             nextIndex++;
                             if (!aggregator(group, nextIndex))
-                                return;
+                                return; // abort
                         }
 
                         post();
@@ -629,7 +629,7 @@ public ref struct SpanQuery<TSpan, TElement>
                         {
                             nextResultIndex++;
                             if (!aggregator(result, nextResultIndex))
-                                return;
+                                return; // abort
                         }
 
                         post();
@@ -716,7 +716,7 @@ public ref struct SpanQuery<TSpan, TElement>
                         {
                             nextIndex++;
                             if (!aggregator(item, nextIndex))
-                                return;
+                                return; // abort
                         }
 
                         post();
@@ -847,7 +847,7 @@ public ref struct SpanQuery<TSpan, TElement>
                         for (int i = 0; i < list.Count; i++)
                         {
                             if (!aggregator(list[i], i))
-                                return;
+                                return; // abort
                         }
 
                         post();
@@ -946,7 +946,7 @@ public ref struct SpanQuery<TSpan, TElement>
                         for (int i = list.Count - 1, resultIndex = 0; i >= 0; i--, resultIndex++)
                         {
                             if (!aggregator(list[i], resultIndex))
-                                return;
+                                return; // abort
                         }
 
                         post();
@@ -1243,7 +1243,7 @@ public ref struct SpanQuery<TSpan, TElement>
                         {
                             nextIndex++;
                             if (!aggregator(queue.Dequeue(), nextIndex))
-                                return;
+                                return; // abort
                         }
 
                         post();
