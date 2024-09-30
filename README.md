@@ -19,7 +19,7 @@ This project exists to give you a way to use LINQ operators directly on a span w
 Included are a full set of LINQ operators that work on a new type `SpanQuery` 
 that you can get using the `AsSpanQuery()` extension method,
 and a separate limited set of operators that work directly on `Span<T>` and `ReadOnlySpan<T>`.
-The limited operators only include operators that return a single value, 
+The limited operators only include functions that return a single value, 
 like the `Any`, `Aggregate`, `Count`, `ElementAt` and `First`,
 that operate on the span immediately, 
 as opposed to defering execution until the full query is assembled.

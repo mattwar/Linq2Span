@@ -20,6 +20,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="..\..\README.md" Link="README.md" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Update="NugetReadme.md">
       <Pack>True</Pack>
       <PackagePath>\</PackagePath>

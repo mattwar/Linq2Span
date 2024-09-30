@@ -50,6 +50,12 @@ namespace Tests
                 OneToTen.Append(11).ToArray(),
                 OneToTen.AsSpanQuery().Append(11).ToArray()
                 );
+
+            // post op indices
+            AssertAreEquivalent(
+                OneToTen.Append(11).Select((x, i) => i).ToArray(),
+                OneToTen.AsSpanQuery().Append(11).Select((x, i) => i).ToArray()
+                );
         }
 
         [TestMethod]
@@ -63,7 +69,7 @@ namespace Tests
         {
             AssertAreEquivalent(
                 OneToTen.AsSpanQuery().Cast<object>().ToArray(),
-                (object)OneToTen.Cast<object>().ToArray()
+                OneToTen.Cast<object>().ToArray()
                 );
         }
 
@@ -75,7 +81,7 @@ namespace Tests
                 OneToTen.AsSpanQuery().Chunk(3).ToArray()
                 );
 
-            // chunk indices
+            // post op indices
             AssertAreEquivalent(
                 OneToTen.Chunk(3).Select((x, i) => i).ToArray(),
                 OneToTen.AsSpanQuery().Chunk(3).Select((x, i) => i).ToArray()

@@ -21,11 +21,11 @@ namespace Tests
 
             if (expected == null && actual != null)
             {
-                Assert.Fail($"{path}: expected: {expected} actual: {actual}");
+                Assert.Fail($"{path}: expected: null");
             }
             else if (expected != null && actual == null)
             {
-                Assert.Fail($"{path}: expected: {expected} actual: {actual}");
+                Assert.Fail($"{path}: expected: not null");
             }
 
             var expectedType = expected!.GetType();
@@ -62,15 +62,27 @@ namespace Tests
             }
             else
             {
-                var props = expectedType.GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy);
+                var binding = BindingFlags.Public | BindingFlags.Instance | BindingFlags.FlattenHierarchy;
+
+                // compare public properties
+                var props = expectedType.GetProperties(binding);
                 foreach (var prop in props)
                 {
-                    if (prop.GetIndexParameters().Length == 0)
+                    if (prop.GetIndexParameters().Length == 0) // only properties, not indexers
                     {
                         var expectedPropValue = prop.GetValue(expected);
                         var actualPropValue = prop.GetValue(actual);
                         AssertAreEquivalent(expectedPropValue, actualPropValue, $"{path}.{prop.Name}");
                     }
+                }
+
+                // compare public fields
+                var fields = expectedType.GetFields(binding);
+                foreach (var field in fields)
+                {
+                    var expectedFieldValue = field.GetValue(expected);
+                    var actualFieldValue = field.GetValue(actual);
+                    AssertAreEquivalent(expectedFieldValue, actualFieldValue, $"{path}.{field.Name}");
                 }
             }
         }
