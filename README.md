@@ -28,35 +28,59 @@ as opposed to defering execution until the full query is assembled.
 
 The type `SpanQuery` is a ref struct that captures the span,
 restricting your use of it to the stack.
-It also accumulates your LINQ operations as delegates, as you call them,
+It also accumulates your LINQ operations as you call them,
 just like how LINQ works with `IEnumerable<T>` and `IQueryable<T>`.
 When you call an operator like `Count` or `ToList` 
 or iterate the results using `ForEach`,
 the operations are executed on the span to determine the results.
+It also uses additional type arguments beyond the `T` that `IEnumerable<T>` uses,
+which allows it to build up a query execution plan that does minimal allocations.
+This makes it more cumbersome to pass span queries around as parameters.
+An example is given below.
 
 You can avoid list allocations for queries that produce multiple values by using the `ForEach` operator
 instead of converting the results to an allocated list using `ToList`.
 
-*Note: The implementation is not allocation free, as the operations are captured as delegates.*
-
-*Note: Some operators such as `Reverse` and `OrderBy` will still cause duplication of the span, or a subset, 
-even when the final operation is an aggregate or `ForEach`. Use of these operators should be limited.*
+*Note: Many operator implementations are allocation free.
+Some operators may cause allocations in order to support the correct semantics, 
+and others such as `Reverse` and `OrderBy` cause duplication of the span, or a subset, 
+even when the final operation is an aggregate or `ForEach`. 
+Use of these operators should be limited.*
 
 # Example Usage
+
+### Build and execute a query
 
 ```csharp
 Span<int> span = stackalloc int[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
 
-// print the squares of the even numbers
-span.AsSpanQuery()
+// produce the squares of the even numbers
+var query = span.AsSpanQuery()
 	.Where(i => i % 2 == 0)
-	.Select(i => i * i)
-	.ForEach(i => Console.WriteLine(i));
+	.Select(i => i * i);
+
+query.ForEach(i => Console.WriteLine(i));
 ```
 
+### Use some operators on span without creating a query.
+
 ```csharp
-// first even number w/o SpanQuery
+// first even number
 var first = span.FirstOrDefault(i => i % 2 == 0);
+```
+
+### Use a query as a parameter
+
+```csharp
+// TSpan refers to the original element type of the span.
+// TElement is the current resulting element type of the query.
+// TEnumerator is a type that executes the query.
+public void SomeMethod<TSpan, TElement, TEnumerator>(SpanQuery<TSpan, TElement, TEnumerator> query)
+   where TEnumerator : struct, ISpanEnumerator<TSpan, TElement>
+{
+	TElement first = query.First();
+	...
+}
 ```
 
 # How to Access
