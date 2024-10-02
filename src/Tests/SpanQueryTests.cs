@@ -355,6 +355,13 @@ namespace Tests
                 OneToTen.AsSpanQuery().Intersect([2, 4, 6]).ToArray()
                 );
 
+            // results are distinct
+            var duplicates = OneToTen.Concat(OneToTen).ToArray();
+            AssertAreEquivalent(
+                duplicates.Intersect([2, 4, 6]).ToArray(),
+                duplicates.AsSpanQuery().Intersect([2, 4, 6]).ToArray()
+                );
+
             // post op indices
             AssertAreEquivalent(
                 OneToTen.Intersect([2, 4, 6]).Select((x, i) => i).ToArray(),
@@ -368,6 +375,13 @@ namespace Tests
             AssertAreEquivalent(
                 OneToTen.IntersectBy([2, 4, 6], x => x * 2).ToArray(),
                 OneToTen.AsSpanQuery().IntersectBy([2, 4, 6], x => x * 2).ToArray()
+                );
+
+            // results are distinct
+            var duplicates = OneToTen.Concat(OneToTen).ToArray();
+            AssertAreEquivalent(
+                duplicates.IntersectBy([2, 4, 6], x => x * 2).ToArray(),
+                duplicates.AsSpanQuery().IntersectBy([2, 4, 6], x => x * 2).ToArray()
                 );
 
             // post op indices
@@ -874,6 +888,13 @@ namespace Tests
                 OneToTen.AsSpanQuery().Union([2, 11, 15]).ToArray()
                 );
 
+            // results are distinct
+            var duplicates = OneToTen.Concat(OneToTen).ToArray();
+            AssertAreEquivalent(
+                duplicates.Union([2, 11, 15]).ToArray(),
+                duplicates.AsSpanQuery().Union([2, 11, 15]).ToArray()
+                );
+
             // post op indices
             AssertAreEquivalent(
                 OneToTen.Union([2, 11, 15]).Select((x, i) => i).ToArray(),
@@ -887,6 +908,13 @@ namespace Tests
             AssertAreEquivalent(
                 OneToTen.UnionBy([2, 11, 15], x => x % 2).ToArray(),
                 OneToTen.AsSpanQuery().UnionBy([2, 11, 15], x => x % 2).ToArray()
+                );
+
+            // results are distinct
+            var duplicates = OneToTen.Concat(OneToTen).ToArray();
+            AssertAreEquivalent(
+                duplicates.UnionBy([2, 11, 15], x => x * 2).ToArray(),
+                duplicates.AsSpanQuery().UnionBy([2, 11, 15], x => x * 2).ToArray()
                 );
 
             // post op indices

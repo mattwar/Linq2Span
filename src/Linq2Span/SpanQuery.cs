@@ -1,212 +1,240 @@
-﻿using System.Xml.Linq;
+﻿namespace Linq2Span;
 
-namespace Linq2Span;
+using Enumerators;
+using System.Numerics;
 
-public ref struct SpanQuery<TSpan, TElement>
+public ref struct SpanQuery<TSpan, TElement, TEnumerator>
+    where TEnumerator : struct, ISpanEnumerator<TSpan, TElement>
 {
     private readonly ReadOnlySpan<TSpan> _span;
-    private readonly CreateAggregator<TElement, TSpan> _createAggregator;
+    internal readonly TEnumerator _enumerator;
 
-    internal SpanQuery(
+    public SpanQuery(
         ReadOnlySpan<TSpan> span,
-        CreateAggregator<TElement, TSpan> createAggregator)
+        TEnumerator enumerator)
     {
         _span = span;
-        _createAggregator = createAggregator;
+        _enumerator = enumerator;
     }
 
-    /// <summary>
-    /// Continues this enumerable by specifing a new function that creates a composite aggregator
-    /// from the previous one.
-    /// </summary>
-    public SpanQuery<TSpan, TResult> Continue<TResult>(
-        CreateCreateAggregator<TResult, TElement, TSpan> createCreateAggregator)
+    internal SpanQuery<TSpan, TElement2, TEnumerator2> With<TElement2, TEnumerator2>(
+        TEnumerator2 enumerator)
+        where TEnumerator2 : struct, ISpanEnumerator<TSpan, TElement2>
     {
-        return new SpanQuery<TSpan, TResult>(
-            _span,
-            createCreateAggregator(_createAggregator)
-            );
+        return new SpanQuery<TSpan, TElement2, TEnumerator2>(_span, enumerator);
     }
 
-    /// <summary>
-    /// Calls the function for each element in order.
-    /// If the function return false the enumeration stops early.
-    /// </summary>
-    public void ForEach(Func<TElement, int, bool> action)
+    internal SpanQuery<TSpan, TElement, TEnumerator2> With<TEnumerator2>(
+        TEnumerator2 enumerator)
+        where TEnumerator2 : struct, ISpanEnumerator<TSpan, TElement>
     {
-        var (pre, aggregator, post) = _createAggregator(() => true, action, () => { });
+        return new SpanQuery<TSpan, TElement, TEnumerator2>(_span, enumerator);
+    }
 
-        if (pre())
+    public void ForEach(Func<TElement, int, bool> func)
+    {
+        int nextIndex = 0;
+        while (_enumerator.MoveNext(_span))
         {
-            for (int i = 0; i < _span.Length; i++)
-            {
-                if (!aggregator(_span[i], i))
-                    return; // abort
-            }
+            if (!func(_enumerator.Current, nextIndex++))
+                return;
+        }
+    }
+
+    public void ForEach(Func<TElement, bool> func)
+    {
+        while (_enumerator.MoveNext(_span))
+        {
+            if (!func(_enumerator.Current))
+                return;
+        }
+    }
+
+    public void ForEach(Action<TElement, int> action)
+    {
+        int nextIndex = 0;
+        while (_enumerator.MoveNext(_span))
+        {
+            action(_enumerator.Current, nextIndex++);
+        }
+    }
+
+    public void ForEach(Action<TElement> action)
+    {
+        while (_enumerator.MoveNext(_span))
+        {
+            action(_enumerator.Current);
+        }
+    }
+
+    public List<TElement> ToList()
+    {
+        var enumerator = _enumerator;
+
+        var list = new List<TElement>();
+
+        while (enumerator.MoveNext(_span))
+        {
+            list.Add(enumerator.Current);
         }
 
-        post();
+        return list;
     }
 
-    /// <summary>
-    /// Calls the function for each element in order.
-    /// If the function return false the enumeration stops early.
-    /// </summary>
-    public void ForEach(Func<TElement, bool> action)
+    public TElement[] ToArray()
     {
-        ForEach((value, index) => action(value));
+        return ToList().ToArray();
     }
 
-    /// <summary>
-    /// Iterates over the elements of the span and applies the action to each element.
-    /// </summary>
-    public void ForEach(Action<TElement, int> action) =>
-        ForEach((value, index) => { action(value, index); return true; });
-
-    /// <summary>
-    /// Iterates over the elements of the span and applies the action to each element.
-    /// </summary>
-    public void ForEach(Action<TElement> action) =>
-        ForEach(value => { action(value); return true; });
-
-
-    #region query operators
-
-    public bool All(
-        Func<TElement, bool> predicate)
+    public HashSet<TElement> ToHashSet(
+        IEqualityComparer<TElement>? comparer = null)
     {
-        return this.Aggregate(true, (all, value) => all && predicate(value));
+        var enumerator = _enumerator;
+        var hashset = new HashSet<TElement>(comparer ?? EqualityComparer<TElement>.Default);
+        while (enumerator.MoveNext(_span))
+        {
+            hashset.Add(enumerator.Current);
+        }
+        return hashset;
     }
 
-    public TAggregate Aggregate<TAggregate>(
-        TAggregate seed,
-        Func<TAggregate, TElement, TAggregate> func)
+    public Dictionary<TKey, TValue> ToDictionary<TKey, TValue>(
+        Func<TElement, TKey> keySelector,
+        Func<TElement, TValue> valueSelector,
+        IEqualityComparer<TKey>? comparer = null)
+        where TKey : notnull
+    {
+        var enumerator = _enumerator;
+        var dictionary = new Dictionary<TKey, TValue>(comparer ?? EqualityComparer<TKey>.Default);
+        while (enumerator.MoveNext(_span))
+        {
+            var element = enumerator.Current;
+            dictionary.Add(keySelector(element), valueSelector(element));
+        }
+        return dictionary;
+    }
+
+    public Dictionary<TKey, TElement> ToDictionary<TKey>(
+        Func<TElement, TKey> keySelector,
+        IEqualityComparer<TKey>? comparer = null)
+        where TKey : notnull
+    {
+        return ToDictionary(keySelector, x => x, comparer);
+    }
+
+    #region Operators
+
+    public TResult Aggregate<TResult>(
+        TResult seed,
+        Func<TResult, TElement, TResult> aggregator)
     {
         var result = seed;
-        ForEach(value => 
+
+        var enumerator = _enumerator;
+        while (enumerator.MoveNext(_span))
         {
-            result = func(result, value);
-        });
+            result = aggregator(result, enumerator.Current);
+        }
 
         return result;
     }
 
-    public TAggregate Aggregate<TAggregate>(
-        Func<TAggregate, TElement, TAggregate> func)
+    public TResult Aggregate<TAccumulate, TResult>(
+        TAccumulate seed,
+        Func<TAccumulate, TElement, TAccumulate> aggregator,
+        Func<TAccumulate, TResult> selector)
     {
-        return Aggregate(default(TAggregate)!, func)!;
+        var accumulate = seed;
+
+        var enumerator = _enumerator;
+        while (enumerator.MoveNext(_span))
+        {
+            accumulate = aggregator(accumulate, enumerator.Current);
+        }
+
+        return selector(accumulate);
+    }
+
+    public bool All(Func<TElement, bool> predicate)
+    {
+        var enumerator = _enumerator;
+        while (enumerator.MoveNext(_span))
+        {
+            if (!predicate(enumerator.Current))
+                return false;
+        }
+        return true;
+    }
+
+    public SpanQuery<TSpan, TElement, AppendEnumerator<TSpan, TElement, TEnumerator>> Append(
+        TElement element)
+    {
+        return With(
+            new AppendEnumerator<TSpan, TElement, TEnumerator>(
+                _enumerator,
+                element
+                ));
     }
 
     public bool Any()
     {
-        var hasValue = false;
+        var enumerator = _enumerator;
+        return enumerator.MoveNext(_span);
+    }
 
-        ForEach(value =>
+    public bool Any(Func<TElement, bool> predicate)
+    {
+        var enumerator = _enumerator;
+        while (enumerator.MoveNext(_span))
         {
-            hasValue = true;
-            return false;
-        });
-
-        return hasValue;
-    }
-
-    public bool Any(
-        Func<TElement, bool> predicate)
-    {
-        return this.Where(predicate).Any();
-    }
-
-    public SpanQuery<TSpan, TElement> Append(
-        TElement element)
-    {
-        return this.Continue<TElement>(
-            createAggregator => (pre, aggregator, post) =>
+            if (predicate(enumerator.Current))
             {
-                int nextIndex = 0;
-                return createAggregator(
-                    pre,
-                    (value, index) =>
-                    {
-                        nextIndex = index + 1;
-                        return aggregator(value, index);
-                    },
-                    () =>
-                    {
-                        aggregator(element, nextIndex);
-                        post();
-                    });
-            });
+                return true;
+            }
+        }
+        return false;
     }
 
-    /// <summary>
-    /// Converts the elements to the type.
-    /// </summary>
-    public SpanQuery<TSpan, TType> Cast<TType>()
+    public TNumber Average<TNumber>(Func<TElement, TNumber> selector)
+        where TNumber : INumber<TNumber>
     {
-        return this.Select(value => (TType)(object)value!);
+        var total = TNumber.Zero;
+        var count = TNumber.Zero;
+        var enumerator = _enumerator;
+        while (enumerator.MoveNext(_span))
+        {
+            var value = selector(enumerator.Current);
+            total = total + value;
+            count += TNumber.One;
+        }
+        return total / count;
     }
 
-    public SpanQuery<TSpan, TElement[]> Chunk(
+    public SpanQuery<TSpan, TResult, CastEnumerator<TSpan, TElement, TEnumerator, TResult>> Cast<TResult>()
+    {
+        return With<TResult, CastEnumerator<TSpan, TElement, TEnumerator, TResult>>(
+            new CastEnumerator<TSpan, TElement, TEnumerator, TResult>(_enumerator)
+            );
+    }
+
+    public SpanQuery<TSpan, TElement[], ChunkEnumerator<TSpan, TElement, TEnumerator>> Chunk(
         int size)
     {
-        return this.Continue<TElement[]>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                int chunkIndex = 0;
-                var chunk = new List<TElement>();
-                return createAggregator(
-                    pre,
-                    (value, _) =>
-                    {
-                        chunk.Add(value);
-
-                        if (chunk.Count == size)
-                        {
-                            if (!aggregator(chunk.ToArray(), chunkIndex++))
-                                return false;
-                            chunk.Clear();
-                        }
-
-                        return true;
-                    },
-                    () =>
-                    {
-                        if (chunk.Count > 0)
-                        {
-                            if (!aggregator(chunk.ToArray(), chunkIndex++))
-                                return; // abort
-                        }
-
-                        post();
-                    });
-            });
+        return With<TElement[], ChunkEnumerator<TSpan, TElement, TEnumerator>>(
+            new ChunkEnumerator<TSpan, TElement, TEnumerator>(
+                _enumerator,
+                size)
+            );
     }
 
-    public SpanQuery<TSpan, TElement> Concat(
+    public SpanQuery<TSpan, TElement, ConcatEnumerator<TSpan, TElement, TEnumerator>> Concat(
         IEnumerable<TElement> elements)
     {
-        return Continue<TElement>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                int nextIndex = 0;
-                return createAggregator(
-                    pre,
-                    (value, _) =>
-                    {
-                        return aggregator(value, nextIndex++);
-                    },
-                    () => 
-                    {
-                        foreach (var element in elements)
-                        {
-                            if (!aggregator(element, nextIndex++))
-                                return; // abort
-                        }
-
-                        post();
-                    });
-            });
-
+        return With(
+            new ConcatEnumerator<TSpan, TElement, TEnumerator>(
+                _enumerator,
+                elements
+                ));
     }
 
     public bool Contains(
@@ -215,176 +243,88 @@ public ref struct SpanQuery<TSpan, TElement>
     {
         comparer ??= EqualityComparer<TElement>.Default;
 
-        var contains = false;
-        ForEach(val =>
+        var enumerator = _enumerator;
+        while (enumerator.MoveNext(_span))
         {
-            if (comparer.Equals(value, val))
-            {
-                contains = true;
-                return false;
-            }
+            if (comparer.Equals(enumerator.Current, value))
+                return true;
+        }
 
-            return true;
-        });
-
-        return contains;
+        return false;
     }
 
     public int Count()
     {
+        var enumerator = _enumerator;
         int count = 0;
-        ForEach(value => count++);
+        while (enumerator.MoveNext(_span))
+        {
+            count++;
+        }
         return count;
     }
 
     public int Count(Func<TElement, bool> predicate)
     {
+        var enumerator = _enumerator;
         int count = 0;
-        ForEach(value =>
+        while (enumerator.MoveNext(_span))
         {
-            if (predicate(value))
+            if (predicate(enumerator.Current))
                 count++;
-        });
+        }
         return count;
     }
 
-    public SpanQuery<TSpan, TElement?> DefaultIfEmpty()
-    {
-        return Continue<TElement?>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                int count = 0;
-                return createAggregator(
-                    pre,
-                    (value, index) =>
-                    {
-                        count++;
-                        return aggregator(value, index);
-                    },
-                    () =>
-                    {
-                        // add default item if no items existed
-                        if (count == 0)
-                        {
-                            if (!aggregator(default, 0))
-                                return; // abort
-                        }                           
-
-                        post();
-                    });
-            });
-    }
-
-    public SpanQuery<TSpan, TElement> DefaultIfEmpty(
+    public SpanQuery<TSpan, TElement, DefaultIfEmptyEnumerator<TSpan, TElement, TEnumerator>> DefaultIfEmpty(
         TElement defaultValue)
     {
-        return Continue<TElement>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                int count = 0;
-                return createAggregator(
-                    pre,
-                    (value, index) =>
-                    {
-                        count++;
-                        return aggregator(value, index);
-                    },
-                    () =>
-                    {
-                        // add default item if no items existed
-                        if (count == 0)
-                        {
-                            if (!aggregator(defaultValue, 0))
-                                return; // abort
-                        }
-
-                        post();
-                    });
-            });
+        return With(
+            new DefaultIfEmptyEnumerator<TSpan, TElement, TEnumerator>(
+                _enumerator,
+                defaultValue
+                ));
     }
 
-    public SpanQuery<TSpan, TElement> Distinct(
-        IEqualityComparer<TElement>? comparer = null)
+    public SpanQuery<TSpan, TElement, DefaultIfEmptyEnumerator<TSpan, TElement, TEnumerator>> DefaultIfEmpty()
     {
-        return Continue<TElement>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                var hashset = new HashSet<TElement>(comparer ?? EqualityComparer<TElement>.Default);
-                var list = new List<TElement>();
-                return createAggregator(
-                    pre,
-                    (value, _) =>
-                    {
-                        if (hashset.Add(value))
-                            list.Add(value);
-                        return true;
-                    },
-                    () =>
-                    {
-                        for (int i = 0; i < list.Count; i++)
-                        {
-                            if (!aggregator(list[i], i))
-                                return; // abort
-                        }
-
-                        post();
-                    });
-            });
+        return With(
+            new DefaultIfEmptyEnumerator<TSpan, TElement, TEnumerator>(
+                _enumerator,
+                default(TElement)!
+                ));
     }
 
-    public SpanQuery<TSpan, TElement> DistinctBy<TBy>(
-        Func<TElement, TBy> bySelector,
-        IEqualityComparer<TBy>? comparer = null)
+    public SpanQuery<TSpan, TElement, DistinctByEnumerator<TSpan, TElement, TEnumerator, TElement>> Distinct(
+        IEqualityComparer<TElement>? keyComparer = null)
     {
-        return Continue<TElement>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                var hashset = new HashSet<TBy>(comparer ?? EqualityComparer<TBy>.Default);
-                var list = new List<TElement>();
-                return createAggregator(
-                    pre,
-                    (value, _) =>
-                    {
-                        if (hashset.Add(bySelector(value)))
-                            list.Add(value);
-                        return true;
-                    },
-                    () =>
-                    {
-                        for (int i = 0; i < list.Count; i++)
-                        {
-                            if (!aggregator(list[i], i))
-                                return; // abort
-                        }
+        return DistinctBy(e => e, keyComparer);
+    }
 
-                        post();
-                    });
-            });
+    public SpanQuery<TSpan, TElement, DistinctByEnumerator<TSpan, TElement, TEnumerator, TKey>> DistinctBy<TKey>(
+        Func<TElement, TKey> keySelector,
+        IEqualityComparer<TKey>? keyComparer = null)
+    {
+        return With(
+            new DistinctByEnumerator<TSpan, TElement, TEnumerator, TKey>(
+                _enumerator,
+                keySelector,
+                keyComparer ?? EqualityComparer<TKey>.Default
+                ));
     }
 
     public TElement ElementAt(int index)
     {
         if (index >= 0)
         {
-            bool found = false;
-            TElement element = default!;
-
-            ForEach((value, _index) =>
+            var enumerator = _enumerator;
+            while (enumerator.MoveNext(_span))
             {
-                if (index == _index)
-                {
-                    found = true;
-                    element = value;
-                    return false;
-                }
-
-                return true;
-            });
-
-            if (found)
-                return element;
+                if (index == 0)
+                    return enumerator.Current;
+                index--;
+            }
         }
-
         throw new ArgumentOutOfRangeException(nameof(index));
     }
 
@@ -393,24 +333,21 @@ public ref struct SpanQuery<TSpan, TElement>
         if (!index.IsFromEnd)
             return ElementAt(index.Value);
 
-        var length = index.Value;
-        var queue = new Queue<TElement>(length);
+        var distanceFromEnd = index.Value;
 
-        if (length > 0)
+        if (distanceFromEnd > 0)
         {
-            int count = 0;
-            ForEach((value, _index) =>
+            var queue = new Queue<TElement>();
+
+            var enumerator = _enumerator;
+            while (enumerator.MoveNext(_span))
             {
-                if (queue.Count == length)
+                if (queue.Count == distanceFromEnd)
                     queue.Dequeue();
+                queue.Enqueue(enumerator.Current);
+            }
 
-                queue.Enqueue(value);
-
-                count++;
-                return true;
-            });
-
-            if (queue.Count == length)
+            if (queue.Count == distanceFromEnd)
             {
                 return queue.Dequeue();
             }
@@ -421,23 +358,18 @@ public ref struct SpanQuery<TSpan, TElement>
 
     public TElement? ElementAtOrDefault(int index)
     {
-        TElement? element = default;
-
         if (index >= 0)
         {
-            ForEach((value, _index) =>
+            var enumerator = _enumerator;
+            while (enumerator.MoveNext(_span))
             {
-                if (index == _index)
-                {
-                    element = value;
-                    return false;
-                }
-
-                return true;
-            });
+                if (index == 0)
+                    return enumerator.Current;
+                index--;
+            }
         }
 
-        return element;
+        return default;
     }
 
     public TElement? ElementAtOrDefault(Index index)
@@ -445,24 +377,21 @@ public ref struct SpanQuery<TSpan, TElement>
         if (!index.IsFromEnd)
             return ElementAtOrDefault(index.Value);
 
-        var length = index.Value;
-        var queue = new Queue<TElement>(length);
+        var distanceFromEnd = index.Value;
 
-        if (length > 0)
+        if (distanceFromEnd > 0)
         {
-            int count = 0;
-            ForEach((value, _index) =>
+            var queue = new Queue<TElement>();
+
+            var enumerator = _enumerator;
+            while (enumerator.MoveNext(_span))
             {
-                if (queue.Count == length)
+                if (queue.Count == distanceFromEnd)
                     queue.Dequeue();
+                queue.Enqueue(enumerator.Current);
+            }
 
-                queue.Enqueue(value);
-
-                count++;
-                return true;
-            });
-
-            if (queue.Count == length && length > 0)
+            if (queue.Count == distanceFromEnd)
             {
                 return queue.Dequeue();
             }
@@ -471,963 +400,642 @@ public ref struct SpanQuery<TSpan, TElement>
         return default;
     }
 
-    public SpanQuery<TSpan, TElement> Except(
+    public SpanQuery<TSpan, TElement, ExceptByEnumerator<TSpan, TElement, TEnumerator, TElement>> Except(
         IEnumerable<TElement> elements,
         IEqualityComparer<TElement>? comparer = null)
     {
-        return Continue<TElement>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                var hashset = elements.ToHashSet(comparer ?? EqualityComparer<TElement>.Default);
-                var nextIndex = 0;
-                return createAggregator(
-                    pre,
-                    (value, _) =>
-                    {
-                        if (!hashset.Contains(value))
-                        {
-                            if (!aggregator(value, nextIndex++))
-                                return false;
-                        }
-                        return true;
-                    },
-                    post
-                    );
-            });
+        return ExceptBy(elements, x => x, comparer);
     }
 
-    public SpanQuery<TSpan, TElement> ExceptBy<TKey>(
+    public SpanQuery<TSpan, TElement, ExceptByEnumerator<TSpan, TElement, TEnumerator, TKey>> ExceptBy<TKey>(
         IEnumerable<TKey> keys,
         Func<TElement, TKey> keySelector,
-        IEqualityComparer<TKey>? comparer = null)
+        IEqualityComparer<TKey>? keyComparer = null)
     {
-        return Continue<TElement>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                var excludedKeys = keys.ToHashSet(comparer ?? EqualityComparer<TKey>.Default);
-                var nextIndex = 0;
-                return createAggregator(
-                    pre,
-                    (value, _) =>
-                    {
-                        var key = keySelector(value);
-                        if (!excludedKeys.Contains(key))
-                        {
-                            if (!aggregator(value, nextIndex++))
-                                return false;
-                        }
-                        return true;
-                    },
-                    post
-                    );
-            });
+        return With(
+            new ExceptByEnumerator<TSpan, TElement, TEnumerator, TKey>(
+                _enumerator,
+                keys,
+                keySelector,
+                keyComparer ?? EqualityComparer<TKey>.Default
+                ));
     }
 
     public TElement First()
     {
-        bool found = false;
-        TElement first = default!;
-
-        ForEach(value =>
+        var enumerator = _enumerator;
+        if (enumerator.MoveNext(_span))
         {
-            if (!found)
-            {
-                found = true;
-                first = value;
-            }
-            return false;
-        });
-
-        return found
-            ? first
-            : throw Exceptions.GetSequenceIsEmptyOrNotSatisfied();
+            return enumerator.Current;
+        }
+        throw Exceptions.GetSequenceIsEmpty();
     }
 
     public TElement First(Func<TElement, bool> predicate)
     {
-        return this.Where(predicate).First();
+        var enumerator = _enumerator;
+        while (enumerator.MoveNext(_span))
+        {
+            if (predicate(enumerator.Current))
+                return enumerator.Current;
+        }
+        throw Exceptions.GetSequenceIsEmptyOrNotSatisfied();
     }
 
     public TElement? FirstOrDefault()
     {
-        bool found = false;
-        TElement? first = default;
-
-        ForEach(value =>
+        var enumerator = _enumerator;
+        if (enumerator.MoveNext(_span))
         {
-            if (!found)
-            {
-                found = true;
-                first = value;
-            }
-            return false;
-        });
-
-        return first!;
+            return enumerator.Current;
+        }
+        return default;
     }
 
-    public TElement? FirstOrDefault(
-        Func<TElement, bool> predicate)
+    public TElement? FirstOrDefault(Func<TElement, bool> predicate)
     {
-        return this.Where(predicate).FirstOrDefault();
+        var enumerator = _enumerator;
+        while (enumerator.MoveNext(_span))
+        {
+            if (predicate(enumerator.Current))
+                return enumerator.Current;
+        }
+        return default;
     }
 
-    public SpanQuery<TSpan, IGrouping<TKey, TElement>> GroupBy<TKey>(
+    public SpanQuery<TSpan, IGrouping<TKey, TElement>, GroupByEnumerator<TSpan, TElement, TEnumerator, TKey>> GroupBy<TKey>(
         Func<TElement, TKey> keySelector,
-        IEqualityComparer<TKey>? comparer = null)
-        where TKey : notnull
+        IEqualityComparer<TKey>? keyComparer = null)
     {
-        return Continue<IGrouping<TKey, TElement>>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                var list = new List<TElement>();
-                return createAggregator(
-                    pre,
-                    (value, _) =>
-                    {
-                        list.Add(value);
-                        return true;
-                    },
-                    () =>
-                    {
-                        var groups = list.GroupBy(keySelector, comparer);
-                        int nextIndex = 0;
-
-                        foreach (var group in groups)
-                        {
-                            if (!aggregator(group, nextIndex++))
-                                return; // abort
-                        }
-
-                        post();
-                    });
-            });
+        return With<IGrouping<TKey, TElement>, GroupByEnumerator<TSpan, TElement, TEnumerator, TKey>>(
+            new GroupByEnumerator<TSpan, TElement, TEnumerator, TKey>(
+                _enumerator,
+                keySelector,
+                keyComparer ?? EqualityComparer<TKey>.Default
+                ));
     }
 
-    public SpanQuery<TSpan, TResult> GroupJoin<TInner, TKey, TResult>(
+    public SpanQuery<TSpan, TResult, GroupJoinEnumerator<TSpan, TElement, TEnumerator, TInner, TKey, TResult>> GroupJoin<TInner, TKey, TResult>(
         IEnumerable<TInner> inner,
         Func<TElement, TKey> outerKeySelector,
         Func<TInner, TKey> innerKeySelector,
         Func<TElement, IEnumerable<TInner>, TResult> resultSelector,
         IEqualityComparer<TKey>? comparer = null)
     {
-        return Continue<TResult>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                var outerList = new List<TElement>();
-                return createAggregator(
-                    pre,
-                    (value, _) =>
-                    {
-                        outerList.Add(value);
-                        return true;
-                    },
-                    () =>
-                    {
-                        int nextIndex = 0;
-                        var results = outerList.GroupJoin(inner, outerKeySelector, innerKeySelector, resultSelector, comparer);
-
-                        foreach (var result in results)
-                        {
-                            if (!aggregator(result, nextIndex++))
-                                return; // abort
-                        }
-
-                        post();
-                    });
-            });
+        return With<TResult, GroupJoinEnumerator<TSpan, TElement, TEnumerator, TInner, TKey, TResult>>(
+            new GroupJoinEnumerator<TSpan, TElement, TEnumerator, TInner, TKey, TResult>(
+                _enumerator,
+                inner,
+                outerKeySelector,
+                innerKeySelector,
+                resultSelector,
+                comparer ?? EqualityComparer<TKey>.Default
+                ));
     }
 
-    public SpanQuery<TSpan, TElement> Intersect(
+    public SpanQuery<TSpan, TElement, IntersectByEnumerator<TSpan, TElement, TEnumerator, TKey>> IntersectBy<TKey>(
+        IEnumerable<TKey> keys,
+        Func<TElement, TKey> keySelector,
+        IEqualityComparer<TKey>? keyComparer = null)
+    {
+        return With(
+            new IntersectByEnumerator<TSpan, TElement, TEnumerator, TKey>(
+                _enumerator,
+                keys,
+                keySelector,
+                keyComparer ?? EqualityComparer<TKey>.Default
+                ));
+    }
+
+    public SpanQuery<TSpan, TElement, IntersectByEnumerator<TSpan, TElement, TEnumerator, TElement>> Intersect(
         IEnumerable<TElement> elements,
         IEqualityComparer<TElement>? comparer = null)
     {
-        return Continue<TElement>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                var hashset = elements.ToHashSet(comparer ?? EqualityComparer<TElement>.Default);
-                var nextIndex = 0;
-                return createAggregator(
-                    pre,
-                    (value, _) =>
-                    {
-                        if (hashset.Contains(value))
-                        {
-                            if (!aggregator(value, nextIndex++))
-                                return false;
-                        }
-                        return true;
-                    },
-                    post
-                    );
-            });
+        return IntersectBy(elements, x => x, comparer);
     }
 
-    public SpanQuery<TSpan, TElement> IntersectBy<TKey>(
-        IEnumerable<TKey> keys,
-        Func<TElement, TKey> keySelector,
-        IEqualityComparer<TKey>? comparer = null)
+    public SpanQuery<TSpan, TResult, JoinEnumerator<TSpan, TElement, TEnumerator, TInner, TKey, TResult>> Join<TInner, TKey, TResult>(
+        IEnumerable<TInner> inner,
+        Func<TElement, TKey> outerKeySelector,
+        Func<TInner, TKey> innerKeySelector,
+        Func<TElement, TInner, TResult> resultSelector,
+        IEqualityComparer<TKey>? keyComparer = null)
     {
-        return Continue<TElement>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                var includedKeys = keys.ToHashSet(comparer ?? EqualityComparer<TKey>.Default);
-                var nextIndex = 0;
-                return createAggregator(
-                    pre,
-                    (value, _) =>
-                    {
-                        var key = keySelector(value);
-                        if (includedKeys.Contains(key))
-                        {
-                            if (!aggregator(value, nextIndex++))
-                                return false;
-                        }
-                        return true;
-                    },
-                    post
-                    );
-            });
-    }
-
-    public SpanQuery<TSpan, TResult> Join<TInner, TKey, TResult>(
-        IEnumerable<TInner> inner, 
-        Func<TElement, TKey> outerKeySelector, 
-        Func<TInner, TKey> innerKeySelector, 
-        Func<TElement, TInner, TResult> resultSelector, 
-        IEqualityComparer<TKey>? comparer = null)
-    {
-        return this.Continue<TResult>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                var list = new List<TElement>();
-                return createAggregator(
-                    pre,
-                    (value, _) =>
-                    {
-                        list.Add(value);
-                        return true;
-                    },
-                    () =>
-                    {
-                        int nextIndex = 0;
-                        foreach (var item in list.Join(inner, outerKeySelector, innerKeySelector, resultSelector, comparer))
-                        {
-                            if (!aggregator(item, nextIndex++))
-                                return; // abort
-                        }
-
-                        post();
-                    });
-            });
-    }
-
-    public TElement Last(
-        Func<TElement, bool> predicate)
-    {
-        bool hasElement = false;
-        TElement element = default!;
-        
-        ForEach(value =>
-        {
-            if (predicate(value))
-            {
-                element = value;
-                hasElement = true;
-            }
-        });
-
-        if (!hasElement)
-            throw Exceptions.GetSequenceIsEmpty();
-
-        return element;
+        return With<TResult, JoinEnumerator<TSpan, TElement, TEnumerator, TInner, TKey, TResult>>(
+            new JoinEnumerator<TSpan, TElement, TEnumerator, TInner, TKey, TResult>(
+                _enumerator,
+                inner,
+                outerKeySelector,
+                innerKeySelector,
+                resultSelector,
+                keyComparer ?? EqualityComparer<TKey>.Default
+                ));
     }
 
     public TElement Last()
     {
-        return Last(x => true);
+        TElement result = default!;
+        bool found = false;
+
+        var enumerator = _enumerator;
+        while (enumerator.MoveNext(_span))
+        {
+            result = enumerator.Current;
+            found = true;
+        }
+
+        if (!found)
+            throw Exceptions.GetSequenceIsEmpty();
+
+        return result;
     }
 
-    public TElement? LastOrDefault(
-        Func<TElement, bool> predicate)
+    public TElement Last(Func<TElement, bool> predicate)
     {
-        TElement? element = default;
+        TElement result = default!;
+        bool found = false;
 
-        ForEach(value =>
+        var enumerator = _enumerator;
+        while (enumerator.MoveNext(_span))
         {
-            if (predicate(value))
+            if (predicate(enumerator.Current))
             {
-                element = value;
+                result = enumerator.Current;
+                found = true;
             }
-        });
+        }
 
-        return element;
+        if (!found)
+            throw Exceptions.GetSequenceIsEmptyOrNotSatisfied();
+
+        return result;
     }
 
     public TElement? LastOrDefault()
     {
-        return LastOrDefault(x => true);
+        var enumerator = _enumerator;
+        TElement? result = default;
+        while (enumerator.MoveNext(_span))
+        {
+            result = enumerator.Current;
+        }
+        return result;
+    }
+
+    public TElement? LastOrDefault(Func<TElement, bool> predicate)
+    {
+        var enumerator = _enumerator;
+        TElement? result = default;
+        while (enumerator.MoveNext(_span))
+        {
+            if (predicate(enumerator.Current))
+            {
+                result = enumerator.Current;
+            }
+        }
+        return result;
     }
 
     public long LongCount()
     {
+        var enumerator = _enumerator;
         long count = 0;
-        ForEach(value => count++);
+        while (enumerator.MoveNext(_span))
+        {
+            count++;
+        }
         return count;
     }
 
     public long LongCount(Func<TElement, bool> predicate)
     {
+        var enumerator = _enumerator;
         long count = 0;
-        ForEach(value =>
+        while (enumerator.MoveNext(_span))
         {
-            if (predicate(value))
+            if (predicate(enumerator.Current))
                 count++;
-        });
+        }
         return count;
     }
 
-    public SpanQuery<TSpan, TElement> OrderBy<TKey>(
-        Func<TElement, TKey> keySelector,
-        IComparer<TKey>? keyComparer = null)
-    {
-        keyComparer ??= Comparer<TKey>.Default;
-        return Order((a, b) => keyComparer.Compare(keySelector(a), keySelector(b)));
-    }
-
-    public SpanQuery<TSpan, TElement> OrderByDescending<TKey>(
-        Func<TElement, TKey> keySelector,
-        IComparer<TKey>? keyComparer = null)
-    {
-        keyComparer ??= Comparer<TKey>.Default;
-        return Order((a, b) => -keyComparer.Compare(keySelector(a), keySelector(b)));
-    }
-
-    public SpanQuery<TSpan, TElement> Order(
-        IComparer<TElement>? comparer = null)
-    {
-        comparer ??= Comparer<TElement>.Default;
-        return Order(comparer.Compare);
-    }
-
-    public SpanQuery<TSpan, TElement> OrderDescending(
-        IComparer<TElement>? comparer = null)
-    {
-        comparer ??= Comparer<TElement>.Default;
-        return Order((a, b) => -comparer.Compare(a,b));
-    }
-
-    private SpanQuery<TSpan, TElement> Order(
-        Comparison<TElement> comparer)
-    {
-        return Continue<TElement>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                var fullComparer = comparer;
-
-                if (aggregator.Target is OrderAggregator ord)
-                {
-                    fullComparer = Combine(comparer, ord.Comparer);
-                    aggregator = ord.Aggregator;
-                }
-
-                var list = new List<TElement>();
-                return createAggregator(
-                    pre,
-                    (value, _) =>
-                    {
-                        list.Add(value);
-                        return true;
-                    },
-                    () =>
-                    {
-                        list.Sort(fullComparer);
-                        for (int i = 0; i < list.Count; i++)
-                        {
-                            if (!aggregator(list[i], i))
-                                return; // abort
-                        }
-
-                        post();
-                    });
-            });
-    }
-
-    private static Comparison<TElement> Combine(
-        Comparison<TElement> primary,
-        Comparison<TElement> secondary)
-    {
-        return (a, b) =>
-        {
-            var result = primary(a, b);
-            if (result == 0)
-                return secondary(a, b);
-            return result;
-        };
-    }
-
-    private class OrderAggregator
-    {
-        public Func<TElement, int, bool> Aggregator;
-        public Comparison<TElement> Comparer { get; }
-
-        public OrderAggregator(
-            Func<TElement, int, bool> aggregator,
-            Comparison<TElement> comparer)
-        {
-            this.Aggregator = aggregator;
-            this.Comparer = comparer;
-        }
-
-        public bool Aggregate(TElement value, int index)
-        {
-            return this.Aggregator(value, index);
-        }
-    }
-
-    /// <summary>
-    /// Produces only the elements of the type.
-    /// </summary>
-    public SpanQuery<TSpan, TType> OfType<TType>()
-    {
-        return this.Continue<TType>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                int nextIndex = 0;
-                return createAggregator(
-                    pre,
-                    (value, _) =>
-                    {
-                        if (value is TType tvalue)
-                        {
-                            if (!aggregator(tvalue, nextIndex++))
-                                return false;
-                        }
-
-                        return true;
-                    },
-                    post
-                    );
-            });
-    }
-
-    public SpanQuery<TSpan, TElement> Prepend(
-        TElement element)
-    {
-        return this.Continue<TElement>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                return createAggregator(
-                    () => pre() && aggregator(element, 0),
-                    (value, index) => aggregator(value, index+1),
-                    post
-                    );
-            });
-    }
-
-    public SpanQuery<TSpan, TElement> Reverse()
-    {
-        return this.Continue<TElement>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                var list = new List<TElement>();
-                return createAggregator(
-                    pre,
-                    (value, _) =>
-                    {
-                        list.Add(value);
-                        return true;
-                    },
-                    () =>
-                    {
-                        for (int i = list.Count - 1, resultIndex = 0; i >= 0; i--, resultIndex++)
-                        {
-                            if (!aggregator(list[i], resultIndex))
-                                return; // abort
-                        }
-
-                        post();
-                    });
-            });
-    }
-
-    public SpanQuery<TSpan, TResult> Select<TResult>(
+    public TResult Max<TResult>(
         Func<TElement, TResult> selector)
     {
-        return Continue<TResult>(
-            createAggregator => (pre, aggregator, post) =>
+        var comparer = Comparer<TResult>.Default;
+        var enumerator = _enumerator;
+        var hasValue = false;
+        TResult maxValue = default!;
+
+        while (enumerator.MoveNext(_span))
+        {
+            var value = selector(enumerator.Current);
+            if (!hasValue || comparer.Compare(value, maxValue) > 0)
             {
-                return createAggregator(
-                    pre,
-                    (value, index) =>
-                    {
-                        var mappedValue = selector(value);
-                        if (!aggregator(mappedValue, index))
-                            return false;
-                        return true;
-                    },
-                    post
-                );
-            });
+                maxValue = value;
+                hasValue = true;
+            }
+        }
+
+        if (!hasValue)
+            throw Exceptions.GetSequenceIsEmptyOrNotSatisfied();
+
+        return maxValue;
     }
 
-    public SpanQuery<TSpan, TResult> Select<TResult>(
+    public TElement? MaxBy<TKey>(
+        Func<TElement, TKey> keySelector,
+        IComparer<TKey>? comparer = null)
+    {
+        comparer ??= Comparer<TKey>.Default;
+
+        var enumerator = _enumerator;
+        var hasValue = false;
+        TKey maxKey = default!;
+        TElement maxValue = default!;
+
+        while (enumerator.MoveNext(_span))
+        {
+            var key = keySelector(enumerator.Current);
+            if (!hasValue || comparer.Compare(key, maxKey) > 0)
+            {
+                maxKey = key;
+                maxValue = enumerator.Current;
+                hasValue = true;
+            }
+        }
+
+        return maxValue;
+    }
+
+    public TResult Min<TResult>(
+        Func<TElement, TResult> selector)
+    {
+        var comparer = Comparer<TResult>.Default;
+        var enumerator = _enumerator;
+        var hasValue = false;
+        TResult minValue = default!;
+
+        while (enumerator.MoveNext(_span))
+        {
+            var value = selector(enumerator.Current);
+            if (!hasValue || comparer.Compare(value, minValue) < 0)
+            {
+                minValue = value;
+                hasValue = true;
+            }
+        }
+
+        if (!hasValue)
+            throw Exceptions.GetSequenceIsEmptyOrNotSatisfied();
+
+        return minValue;
+    }
+
+    public TElement? MinBy<TKey>(
+        Func<TElement, TKey> keySelector,
+        IComparer<TKey>? comparer = null)
+    {
+        comparer ??= Comparer<TKey>.Default;
+
+        var enumerator = _enumerator;
+        var hasValue = false;
+        TKey maxKey = default!;
+        TElement maxValue = default!;
+
+        while (enumerator.MoveNext(_span))
+        {
+            var key = keySelector(enumerator.Current);
+            if (!hasValue || comparer.Compare(key, maxKey) < 0)
+            {
+                maxKey = key;
+                maxValue = enumerator.Current;
+                hasValue = true;
+            }
+        }
+
+        return maxValue;
+    }
+
+    public SpanQuery<TSpan, TResult, OfTypeEnumerator<TSpan, TElement, TEnumerator, TResult>> OfType<TResult>()
+    {
+        return With<TResult, OfTypeEnumerator<TSpan, TElement, TEnumerator, TResult>>(
+            new OfTypeEnumerator<TSpan, TElement, TEnumerator, TResult>(
+                _enumerator
+                ));
+    }
+
+    public SpanQuery<TSpan, TElement, OrderByEnumerator<TSpan, TElement, TEnumerator>> Order(
+        IComparer<TElement>? comparer = null)
+    {
+        comparer ??= Comparer<TElement>.Default;
+        return With(
+            new OrderByEnumerator<TSpan, TElement, TEnumerator>(
+                _enumerator,
+                (a, b) => comparer.Compare(a, b)
+            ));
+    }
+
+    public SpanQuery<TSpan, TElement, OrderByEnumerator<TSpan, TElement, TEnumerator>> OrderBy<TKey>(
+        Func<TElement, TKey> keySelector,
+        IComparer<TKey>? comparer = null)
+    {
+        comparer ??= Comparer<TKey>.Default;
+        return With(
+            new OrderByEnumerator<TSpan, TElement, TEnumerator>(
+                _enumerator,
+                (a, b) => comparer.Compare(keySelector(a), keySelector(b))
+            ));
+    }
+
+    public SpanQuery<TSpan, TElement, OrderByEnumerator<TSpan, TElement, TEnumerator>> OrderByDescending<TKey>(
+        Func<TElement, TKey> keySelector,
+        IComparer<TKey>? comparer = null)
+    {
+        comparer ??= Comparer<TKey>.Default;
+        return With(
+            new OrderByEnumerator<TSpan, TElement, TEnumerator>(
+                _enumerator,
+                (a, b) => -comparer.Compare(keySelector(a), keySelector(b))
+            ));
+    }
+
+    public SpanQuery<TSpan, TElement, OrderByEnumerator<TSpan, TElement, TEnumerator>> OrderDescending(
+        IComparer<TElement>? comparer = null)
+    {
+        comparer ??= Comparer<TElement>.Default;
+        return With(
+            new OrderByEnumerator<TSpan, TElement, TEnumerator>(
+                _enumerator,
+                (a, b) => -comparer.Compare(a, b)
+            ));
+    }
+
+    public SpanQuery<TSpan, TElement, PrependSpanEnumerator<TSpan, TElement, TEnumerator>> Prepend(
+        TElement element)
+    {
+        return With<TElement, PrependSpanEnumerator<TSpan, TElement, TEnumerator>>(
+            new PrependSpanEnumerator<TSpan, TElement, TEnumerator>(
+                _enumerator,
+                element
+                ));
+    }
+
+    public SpanQuery<TSpan, TElement, ReverseEnumerator<TSpan, TElement, TEnumerator>> Reverse()
+    {
+        return With(
+            new ReverseEnumerator<TSpan, TElement, TEnumerator>(
+                _enumerator
+                ));
+    }
+
+    public SpanQuery<TSpan, TResult, SelectEnumerator<TSpan, TElement, TEnumerator, TResult>> Select<TResult>(
         Func<TElement, int, TResult> selector)
     {
-        return Continue<TResult>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                return createAggregator(
-                    pre,
-                    (value, index) =>
-                    {
-                        var mappedValue = selector(value, index);
-                        if (!aggregator(mappedValue, index))
-                            return false;
-                        return true;
-                    },
-                    post
-                );
-            });
+        return With<TResult, SelectEnumerator<TSpan, TElement, TEnumerator, TResult>>(
+            new SelectEnumerator<TSpan, TElement, TEnumerator, TResult>(
+                _enumerator,
+                selector
+                ));
     }
 
-    public SpanQuery<TSpan, TResult> SelectMany<TResult>(
+    public SpanQuery<TSpan, TResult, SelectEnumerator<TSpan, TElement, TEnumerator, TResult>> Select<TResult>(
+        Func<TElement, TResult> selector)
+    {
+        return Select((x, _) => selector(x));
+    }
+
+    public SpanQuery<TSpan, TResult, SelectManyEnumerator<TSpan, TElement, TEnumerator, TResult, TResult>> SelectMany<TResult>(
         Func<TElement, int, IEnumerable<TResult>> selector)
     {
-        return Continue<TResult>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                int resultIndex = 0;
-                return createAggregator(
-                    pre,
-                    (value, valueIndex) =>
-                    {
-                        foreach (var item in selector(value, valueIndex))
-                        {
-                            if (!aggregator(item, resultIndex++))
-                                return false;
-                        }
-
-                        return true;
-                    },
-                    post
-                );
-            });
+        return SelectMany(selector, (x, y) => y);
     }
 
-    public SpanQuery<TSpan, TResult> SelectMany<TResult>(
+    public SpanQuery<TSpan, TResult, SelectManyEnumerator<TSpan, TElement, TEnumerator, TResult, TResult>> SelectMany<TResult>(
         Func<TElement, IEnumerable<TResult>> selector)
     {
-        return SelectMany((value, index) => selector(value));
+        return SelectMany((x, _) => selector(x));
     }
-
-    public SpanQuery<TSpan, TResult> SelectMany<TCollection, TResult>(
+    
+    public SpanQuery<TSpan, TResult, SelectManyEnumerator<TSpan, TElement, TEnumerator, TCollection, TResult>> SelectMany<TCollection, TResult>(
         Func<TElement, int, IEnumerable<TCollection>> collectionSelector,
         Func<TElement, TCollection, TResult> resultSelector)
     {
-        return Continue<TResult>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                int resultIndex = 0;
-                return createAggregator(
-                    pre,
-                    (value, valueIndex) =>
-                    {
-                        foreach (var item in collectionSelector(value, valueIndex))
-                        {
-                            var result = resultSelector(value, item);
-                            if (!aggregator(result, resultIndex++))
-                                return false;
-                        }
-
-                        return true;
-                    },
-                    post
-                );
-            });
+        return With<TResult, SelectManyEnumerator<TSpan, TElement, TEnumerator, TCollection, TResult>>(
+            new SelectManyEnumerator<TSpan, TElement, TEnumerator, TCollection, TResult>(
+                _enumerator,
+                collectionSelector,
+                resultSelector
+                ));
     }
 
-    public SpanQuery<TSpan, TResult> SelectMany<TCollection, TResult>(
+    public SpanQuery<TSpan, TResult, SelectManyEnumerator<TSpan, TElement, TEnumerator, TCollection, TResult>> SelectMany<TCollection, TResult>(
         Func<TElement, IEnumerable<TCollection>> collectionSelector,
         Func<TElement, TCollection, TResult> resultSelector)
     {
-        return SelectMany((item, index) => collectionSelector(item), resultSelector);
+        return SelectMany((x, i) => collectionSelector(x), resultSelector);
+    }
+
+    public SpanQuery<TSpan, TElement, SkipEnumerator<TSpan, TElement, TEnumerator>> Skip(
+        int count)
+    {
+        return With(
+            new SkipEnumerator<TSpan, TElement, TEnumerator>(
+                _enumerator,
+                count
+            ));
+    }
+
+    public SpanQuery<TSpan, TElement, SkipLastEnumerator<TSpan, TElement, TEnumerator>> SkipLast(
+        int count)
+    {
+        return With(
+            new SkipLastEnumerator<TSpan, TElement, TEnumerator>(
+                _enumerator,
+                count
+            ));
+    }
+
+    public SpanQuery<TSpan, TElement, SkipWhileEnumerator<TSpan, TElement, TEnumerator>> SkipWhile(
+        Func<TElement, int, bool> predicate)
+    {
+        return With(
+            new SkipWhileEnumerator<TSpan, TElement, TEnumerator>(
+                _enumerator,
+                predicate
+            ));
+    }
+
+    public SpanQuery<TSpan, TElement, SkipWhileEnumerator<TSpan, TElement, TEnumerator>> SkipWhile(
+        Func<TElement, bool> predicate)
+    {
+        return SkipWhile((x, _) => predicate(x));
     }
 
     public TElement Single()
     {
-        int count = 0;
-        TElement element = default!;
-
-        ForEach(value =>
+        var enumerator = _enumerator;
+        if (enumerator.MoveNext(_span))
         {
-            if (count == 0)
-                element = value;
-            count++;
-            return count < 2;
-        });
+            var result = enumerator.Current;
+            if (!enumerator.MoveNext(_span))
+                return result;
+        }
 
-        if (count == 0 || count > 1)
-            throw Exceptions.GetSequenceContainsMoreThanOneElementOrEmpty();
-        return element;
+        throw Exceptions.GetSequenceIsEmptyOrContainsMoreThanOneElement();
     }
 
-    public TElement Single(
-        Func<TElement, bool> predicate)
+    public TElement Single(Func<TElement, bool> predicate)
     {
-        return this.Where(predicate).Single();
+        bool found = false;
+        TElement element = default!;
+
+        var enumerator = _enumerator;
+        while (enumerator.MoveNext(_span))
+        {
+            if (predicate(enumerator.Current))
+            {
+                if (!found)
+                {
+                    found = true;
+                    element = enumerator.Current;
+                }
+                else
+                {
+                    throw Exceptions.GetSequenceIsEmptyOrNotSatisifiedOrContainsMoreThanOneElement();
+                }
+            }
+        }
+
+        if (!found)
+            throw Exceptions.GetSequenceIsEmptyOrNotSatisifiedOrContainsMoreThanOneElement();
+
+        return element;
     }
 
     public TElement? SingleOrDefault()
     {
-        int count = 0;
-        TElement? element = default;
-
-        ForEach(value =>
+        var enumerator = _enumerator;
+        if (enumerator.MoveNext(_span))
         {
-            if (count == 0)
-                element = value;
-            count++;
-
-            return count < 2;
-        });
-
-        if (count > 1)
+            var result = enumerator.Current;
+            if (!enumerator.MoveNext(_span))
+                return result;
             throw Exceptions.GetSequenceContainsMoreThanOneElement();
+        }
 
-        return element!;
+        return default;
     }
 
-    public TElement? SingleOrDefault(
-        Func<TElement, bool> predicate)
+    public TElement? SingleOrDefault(Func<TElement, bool> predicate)
     {
-        return this.Where(predicate).SingleOrDefault();
-    }
+        var enumerator = _enumerator;
+        bool found = false;
+        TElement? element = default!;
 
-    public SpanQuery<TSpan, TElement> Skip(int count)
-    {
-        return Continue<TElement>(
-            createAggregator => (pre, aggregator, post) =>
+        while (enumerator.MoveNext(_span))
+        {
+            if (predicate(enumerator.Current))
             {
-                int index = 0;
-                return createAggregator(
-                    pre,
-                    (value, _) =>
-                    {
-                        if (index >= count)
-                        {
-                            if (!aggregator(value, index - count))
-                                return false;
-                        }
-
-                        index++;
-                        return true;
-                    },
-                    post
-                );
-            });
-    }
-
-    public SpanQuery<TSpan, TElement> SkipLast(int count)
-    {
-        return Continue<TElement>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                var queue = new Queue<TElement>(count);
-                int index = 0;
-                return createAggregator(
-                    pre,
-                    (value, _) =>
-                    {
-                        if (queue.Count == count)
-                        {
-                            if (!aggregator(queue.Dequeue(), index - count))
-                                return false;
-                        }
-
-                        queue.Enqueue(value);
-                        index++;
-                        return true;
-                    },
-                    post
-                );
-            });
-    }
-
-    public SpanQuery<TSpan, TElement> SkipWhile(
-        Func<TElement, int, bool> predicate)
-    {
-        return Continue<TElement>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                int nextIndex = 0;
-                bool skip = true;
-                return createAggregator(
-                    pre,
-                    (value, index) =>
-                    {
-                        if (skip)
-                        {
-                            if (!predicate(value, index))
-                                skip = false;
-                        }
-
-                        if (!skip)
-                        {
-                            if (!aggregator(value, nextIndex++))
-                                return false;
-                        }
-
-                        return true;
-                    },
-                    post
-                );
-            });
-    }
-
-    public SpanQuery<TSpan, TElement> SkipWhile(
-        Func<TElement, bool> predicate)
-    {
-        return SkipWhile((value, index) => predicate(value));
-    }
-
-    public SpanQuery<TSpan, TElement> Take(int count)
-    {
-        return Continue<TElement>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                int nextIndex = 0;
-                return createAggregator(
-                    pre,
-                    (value, index) =>
-                    {
-                        if (index < count)
-                        {
-                            if (!aggregator(value, nextIndex++))
-                                return false;
-                        }
-
-                        return true;
-                    },
-                    post
-                );
-            });
-    }
-
-    public SpanQuery<TSpan, TElement> TakeLast(int count)
-    {
-        return Continue<TElement>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                var queue = new Queue<TElement>(count);
-                return createAggregator(
-                    pre,
-                    (value, _) =>
-                    {
-                        queue.Enqueue(value);
-                        if (queue.Count > count)
-                            queue.Dequeue();
-                        return true;
-                    },
-                    () =>
-                    {
-                        int nextIndex = 0;
-                        while (queue.Count > 0)
-                        {
-                            if (!aggregator(queue.Dequeue(), nextIndex++))
-                                return; // abort
-                        }
-
-                        post();
-                    }
-                );
-            });
-    }
-
-    public SpanQuery<TSpan, TElement> TakeWhile(
-        Func<TElement, int, bool> predicate)
-    {
-        return Continue<TElement>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                int nextIndex = 0;
-                return createAggregator(
-                    pre,
-                    (value, index) =>
-                    {
-                        if (predicate(value, index))
-                        {
-                            if (!aggregator(value, nextIndex++))
-                                return false;
-                        }
-                        else
-                        {
-                            return false;
-                        }
-
-                        return true;
-                    },
-                    post
-                );
-            });
-    }
-
-    public SpanQuery<TSpan, TElement> TakeWhile(
-        Func<TElement, bool> predicate)
-    {
-        return TakeWhile((value, index) => predicate(value));
-    }
-
-    public SpanQuery<TSpan, TElement> ThenBy<TKey>(
-        Func<TElement, TKey> keySelector,
-        IComparer<TKey>? keyComparer = null)
-    {
-        keyComparer ??= Comparer<TKey>.Default;
-        return ThenBy((a, b) => keyComparer.Compare(keySelector(a), keySelector(b)));
-    }
-
-    public SpanQuery<TSpan, TElement> ThenByDescending<TKey>(
-        Func<TElement, TKey> keySelector,
-        IComparer<TKey>? keyComparer = null)
-    {
-        keyComparer ??= Comparer<TKey>.Default;
-        return ThenBy((a, b) => -keyComparer.Compare(keySelector(a), keySelector(b)));
-    }
-
-    private SpanQuery<TSpan, TElement> ThenBy(
-        Comparison<TElement> comparer)
-    {
-        return Continue<TElement>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                var fullComparer = comparer;
-
-                if (aggregator.Target is OrderAggregator ord)
+                if (!found)
                 {
-                    fullComparer = Combine(comparer, ord.Comparer);
-                    aggregator = ord.Aggregator;
+                    found = true;
+                    element = enumerator.Current;
                 }
+                else
+                {
+                    throw Exceptions.GetSequenceContainsMoreThanOneElement();
+                }
+            }
+        }
 
-                return createAggregator(
-                    pre,
-                    new OrderAggregator(aggregator, fullComparer).Aggregate,
-                    post
-                    );
-            });
+        return element;
     }
 
-    /// <summary>
-    /// Converts the <see cref="SpanQuery{TSpan, TElement}"/> to an array.
-    /// </summary>
-    public TElement[] ToArray()
+    public TNumber Sum<TNumber>(Func<TElement, TNumber> selector)
+        where TNumber : INumber<TNumber>
     {
-        return ToList().ToArray();
+        var enumerator = _enumerator;
+        TNumber sum = TNumber.Zero;
+        while (enumerator.MoveNext(_span))
+        {
+            sum = sum + selector(enumerator.Current);
+        }
+        return sum;
     }
 
-    /// <summary>
-    /// Converts the <see cref="SpanQuery{TSpan, TElement}"/> to a <see cref="Dictionary{TKey, TValue}"/>.
-    /// </summary>
-    public Dictionary<TKey, TValue> ToDictionary<TKey, TValue>(
-        Func<TElement, TKey> keySelector,
-        Func<TElement, TValue> valueSelector, 
-        IEqualityComparer<TKey>? keyComparer = null)
-        where TKey : notnull
+
+    public SpanQuery<TSpan, TElement, TakeEnumerator<TSpan, TElement, TEnumerator>> Take(
+        int count)
     {
-        return this.ToList().ToDictionary(keySelector, valueSelector, keyComparer);
+        return With(
+            new TakeEnumerator<TSpan, TElement, TEnumerator>(
+                _enumerator,
+                count
+            ));
     }
 
-    /// <summary>
-    /// Converts the <see cref="SpanQuery{TSpan, TElement}"/> to a <see cref="Dictionary{TKey, TElement}"/>.
-    /// </summary>
-    public Dictionary<TKey, TElement> ToDictionary<TKey>(
-        Func<TElement, TKey> keySelector,
-        IEqualityComparer<TKey>? keyComparer = null)
-        where TKey : notnull
+    public SpanQuery<TSpan, TElement, TakeLastEnumerator<TSpan, TElement, TEnumerator>> TakeLast(
+        int count)
     {
-        return this.ToList().ToDictionary(keySelector, keyComparer);
+        return With(
+            new TakeLastEnumerator<TSpan, TElement, TEnumerator>(
+                _enumerator,
+                count
+            ));
     }
 
-    /// <summary>
-    /// Converts the <see cref="SpanQuery{TSpan, TElement}"/> to a <see cref="HashSet{TElement}"/>
-    /// </summary>
-    public HashSet<TElement> ToHashSet(
-        IEqualityComparer<TElement>? comparer = null)
-    {
-        var hashSet = new HashSet<TElement>();
-        ForEach(hashSet.Add);
-        return hashSet;
-    }
-
-    /// <summary>
-    /// Converts the <see cref="SpanQuery{TSpan, TElement}"/> to a <see cref="List{T}"/>
-    /// </summary>
-    public List<TElement> ToList()
-    {
-        var list = new List<TElement>();
-        ForEach(list.Add);
-        return list;
-    }
-
-    public ILookup<TKey, TValue> ToLookup<TKey, TValue>(
-        Func<TElement, TKey> keySelector,
-        Func<TElement, TValue> valueSelector,
-        IEqualityComparer<TKey>? comparer = null)
-        where TKey : notnull
-    {
-        return this.ToList().ToLookup(keySelector, valueSelector, comparer);
-    }
-
-    public ILookup<TKey, TElement> ToLookup<TKey>(
-        Func<TElement, TKey> keySelector,
-        IEqualityComparer<TKey>? comparer = null)
-        where TKey : notnull
-    {
-        return this.ToList().ToLookup(keySelector, comparer);
-    }
-
-    public SpanQuery<TSpan, TElement> Union(
-        IEnumerable<TElement> elements,
-        IEqualityComparer<TElement>? comparer = null)
-    {
-        return Concat(elements).Distinct(comparer);
-    }
-
-    public SpanQuery<TSpan, TElement> UnionBy<TKey>(
-        IEnumerable<TElement> elements,
-        Func<TElement, TKey> keySelector,
-        IEqualityComparer<TKey>? keyComparer = null)
-    {
-        return Concat(elements).DistinctBy(keySelector, keyComparer);
-    }
-
-    public SpanQuery<TSpan, TElement> Where(
+    public SpanQuery<TSpan, TElement, TakeWhileEnumerator<TSpan, TElement, TEnumerator>> TakeWhile(
         Func<TElement, int, bool> predicate)
     {
-        return Continue<TElement>(
-            createAggregator => (pre, aggregator, post) =>
-            {
-                int filteredIndex = 0;
-                return createAggregator(
-                    pre,
-                    (value, index) =>
-                    {
-                        if (predicate(value, index))
-                        {
-                            if (!aggregator(value, filteredIndex++))
-                                return false;
-                        }
-
-                        return true;
-                    },
-                    post
-                );
-            });
+        return With(
+            new TakeWhileEnumerator<TSpan, TElement, TEnumerator>(
+                _enumerator,
+                predicate
+            ));
     }
 
-    public SpanQuery<TSpan, TElement> Where(
+    public SpanQuery<TSpan, TElement, TakeWhileEnumerator<TSpan, TElement, TEnumerator>> TakeWhile(
         Func<TElement, bool> predicate)
     {
-        return Where((value, index) => predicate(value));
+        return TakeWhile((x, _) => predicate(x));
+    }
+
+    public SpanQuery<TSpan, TElement, UnionByEnumerator<TSpan, TElement, TEnumerator, TElement>> Union(
+        IEnumerable<TElement> elements,
+        IEqualityComparer<TElement>? comparer = null)
+    {
+        return UnionBy(elements, x => x, comparer);
+    }
+
+    public SpanQuery<TSpan, TElement, UnionByEnumerator<TSpan, TElement, TEnumerator, TKey>> UnionBy<TKey>(
+        IEnumerable<TElement> elements,
+        Func<TElement, TKey> keySelector,
+        IEqualityComparer<TKey>? keyComparer = null)
+    {
+        return With(
+            new UnionByEnumerator<TSpan, TElement, TEnumerator, TKey>(
+                _enumerator,
+                elements,
+                keySelector,
+                keyComparer ?? EqualityComparer<TKey>.Default
+                )); 
+    }
+
+    public SpanQuery<TSpan, TElement, WhereEnumerator<TSpan, TElement, TEnumerator>> Where(
+        Func<TElement, int, bool> predicate)
+    {
+        return With(
+            new WhereEnumerator<TSpan, TElement, TEnumerator>(
+                _enumerator,
+                predicate
+                ));
+    }
+
+    public SpanQuery<TSpan, TElement, WhereEnumerator<TSpan, TElement, TEnumerator>> Where(
+        Func<TElement, bool> predicate)
+    {
+        return Where((x, _) => predicate(x));
     }
 
     #endregion

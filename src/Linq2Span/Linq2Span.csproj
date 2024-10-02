@@ -6,7 +6,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <GeneratePackageOnBuild>True</GeneratePackageOnBuild>
-    <Version>0.1.1</Version>
+    <Version>0.2.0</Version>
     <Authors>mattwar</Authors>
     <Description>LINQ operators for spans.</Description>
     <PackageProjectUrl>https://github.com/mattwar/Linq2Span</PackageProjectUrl>

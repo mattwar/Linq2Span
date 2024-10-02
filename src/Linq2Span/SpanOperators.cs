@@ -657,7 +657,7 @@ public static class SpanOperators
         this ReadOnlySpan<TSource> source)
     {
         if (source.Length == 0 || source.Length > 1)
-            throw Exceptions.GetSequenceContainsMoreThanOneElementOrEmpty();
+            throw Exceptions.GetSequenceIsEmptyOrContainsMoreThanOneElement();
         return source[0];
     }
 
@@ -674,13 +674,13 @@ public static class SpanOperators
             {
                 count++;
                 if (count > 1)
-                    throw Exceptions.GetSequenceContainsMoreThanOneElementOrEmpty();
+                    throw Exceptions.GetSequenceIsEmptyOrContainsMoreThanOneElement();
                 element = source[i];
             }
         }
 
         if (count != 1)
-            throw Exceptions.GetSequenceContainsMoreThanOneElementOrEmpty();
+            throw Exceptions.GetSequenceIsEmptyOrContainsMoreThanOneElement();
 
         return element;
     }
