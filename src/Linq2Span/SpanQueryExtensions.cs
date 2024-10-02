@@ -56,7 +56,7 @@ public static class SpanQueryExtensions
     {
         keyComparer ??= Comparer<TKey>.Default;
 
-        var outerComparison = query._enumerator.Comparison;
+        var outerComparison = query._enumerator._comparison;
         Comparison<TElement> innerComparison =
             isDescending
                 ? (a, b) => -keyComparer.Compare(keySelector(a), keySelector(b))

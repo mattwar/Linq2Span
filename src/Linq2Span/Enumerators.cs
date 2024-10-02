@@ -1,12 +1,6 @@
 ﻿
 namespace Linq2Span.Enumerators;
 
-public interface ISpanEnumerator<TSpan, TElement>
-{
-    TElement Current { get; }
-    bool MoveNext(ReadOnlySpan<TSpan> span);
-}
-
 /// <summary>
 /// A span enumerator that just enumerates the span.
 /// </summary>
@@ -98,7 +92,7 @@ public struct CastEnumerator<TSpan, TElement, TEnumerator, TResult>
 
     public bool MoveNext(ReadOnlySpan<TSpan> span)
     {
-        while (_enumerator.MoveNext(span))
+        if (_enumerator.MoveNext(span))
         {
             if (_enumerator.Current is TResult tvalue)
             {
@@ -540,13 +534,11 @@ public struct JoinEnumerator<TSpan, TElement, TEnumerator, TInner, TKey, TResult
     {
         while (true)
         {
-            if (_innerEnumerator != null)
+            if (_innerEnumerator != null
+                && _innerEnumerator.MoveNext())
             {
-                if (_innerEnumerator.MoveNext())
-                {
-                    _currentResult = _resultSelector(_currentOuter, _innerEnumerator.Current);
-                    return true;
-                }
+                _currentResult = _resultSelector(_currentOuter, _innerEnumerator.Current);
+                return true;
             }
 
             if (_enumerator.MoveNext(span))
@@ -597,17 +589,12 @@ public struct OfTypeEnumerator<TSpan, TElement, TEnumerator, TResult>
     }
 }
 
-public interface IOrderBy<TElement>
-{
-    public Comparison<TElement> Comparison { get; }
-}
-
 public struct OrderByEnumerator<TSpan, TElement, TEnumerator>
-    : ISpanEnumerator<TSpan, TElement>, IOrderBy<TElement>
+    : ISpanEnumerator<TSpan, TElement>
     where TEnumerator : ISpanEnumerator<TSpan, TElement>
 {
     internal TEnumerator _enumerator;
-    private readonly Comparison<TElement> _comparison;
+    internal readonly Comparison<TElement> _comparison;
     private IEnumerator<TElement>? _listEnumerator;
     private TElement _current = default!;
 
@@ -618,8 +605,6 @@ public struct OrderByEnumerator<TSpan, TElement, TEnumerator>
         _enumerator = enumerator;
         _comparison = comparison;
     }
-
-    public Comparison<TElement> Comparison => _comparison;
 
     public TElement Current => _current;
 

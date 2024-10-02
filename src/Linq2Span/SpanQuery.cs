@@ -34,18 +34,20 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
     public void ForEach(Func<TElement, int, bool> func)
     {
         int nextIndex = 0;
-        while (_enumerator.MoveNext(_span))
+        var enumerator = _enumerator;
+        while (enumerator.MoveNext(_span))
         {
-            if (!func(_enumerator.Current, nextIndex++))
+            if (!func(enumerator.Current, nextIndex++))
                 return;
         }
     }
 
     public void ForEach(Func<TElement, bool> func)
     {
-        while (_enumerator.MoveNext(_span))
+        var enumerator = _enumerator;
+        while (enumerator.MoveNext(_span))
         {
-            if (!func(_enumerator.Current))
+            if (!func(enumerator.Current))
                 return;
         }
     }
@@ -53,26 +55,28 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
     public void ForEach(Action<TElement, int> action)
     {
         int nextIndex = 0;
-        while (_enumerator.MoveNext(_span))
+
+        var enumerator = _enumerator;
+        while (enumerator.MoveNext(_span))
         {
-            action(_enumerator.Current, nextIndex++);
+            action(enumerator.Current, nextIndex++);
         }
     }
 
     public void ForEach(Action<TElement> action)
     {
-        while (_enumerator.MoveNext(_span))
+        var enumerator = _enumerator;
+        while (enumerator.MoveNext(_span))
         {
-            action(_enumerator.Current);
+            action(enumerator.Current);
         }
     }
 
     public List<TElement> ToList()
     {
-        var enumerator = _enumerator;
-
         var list = new List<TElement>();
 
+        var enumerator = _enumerator;
         while (enumerator.MoveNext(_span))
         {
             list.Add(enumerator.Current);
@@ -213,8 +217,9 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
     public SpanQuery<TSpan, TResult, CastEnumerator<TSpan, TElement, TEnumerator, TResult>> Cast<TResult>()
     {
         return With<TResult, CastEnumerator<TSpan, TElement, TEnumerator, TResult>>(
-            new CastEnumerator<TSpan, TElement, TEnumerator, TResult>(_enumerator)
-            );
+            new CastEnumerator<TSpan, TElement, TEnumerator, TResult>(
+                _enumerator
+            ));
     }
 
     public SpanQuery<TSpan, TElement[], ChunkEnumerator<TSpan, TElement, TEnumerator>> Chunk(
