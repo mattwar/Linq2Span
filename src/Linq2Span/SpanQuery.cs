@@ -31,6 +31,30 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return new SpanQuery<TSpan, TElement, TEnumerator2>(_span, enumerator);
     }
 
+    public Enumerator GetEnumerator()
+    {
+        return new Enumerator(_span, _enumerator);
+    }
+
+    public ref struct Enumerator
+    {
+        private readonly ReadOnlySpan<TSpan> _span;
+        private TEnumerator _enumerator;
+
+        public Enumerator(ReadOnlySpan<TSpan> span, TEnumerator enumerator)
+        {
+            _span = span;
+            _enumerator = enumerator;
+        }
+
+        public TElement Current => _enumerator.Current;
+
+        public bool MoveNext()
+        {
+            return _enumerator.MoveNext(_span);
+        }
+    }
+
     public void ForEach(Func<TElement, int, bool> func)
     {
         int nextIndex = 0;
@@ -93,12 +117,14 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
     public HashSet<TElement> ToHashSet(
         IEqualityComparer<TElement>? comparer = null)
     {
-        var enumerator = _enumerator;
         var hashset = new HashSet<TElement>(comparer ?? EqualityComparer<TElement>.Default);
+
+        var enumerator = _enumerator;
         while (enumerator.MoveNext(_span))
         {
             hashset.Add(enumerator.Current);
         }
+
         return hashset;
     }
 
@@ -108,13 +134,15 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
         IEqualityComparer<TKey>? comparer = null)
         where TKey : notnull
     {
-        var enumerator = _enumerator;
         var dictionary = new Dictionary<TKey, TValue>(comparer ?? EqualityComparer<TKey>.Default);
+
+        var enumerator = _enumerator;
         while (enumerator.MoveNext(_span))
         {
             var element = enumerator.Current;
             dictionary.Add(keySelector(element), valueSelector(element));
         }
+
         return dictionary;
     }
 

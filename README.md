@@ -31,7 +31,7 @@ restricting your use of it to the stack.
 It also accumulates your LINQ operations as you call them,
 just like how LINQ works with `IEnumerable<T>` and `IQueryable<T>`.
 When you call an operator like `Count` or `ToList` 
-or iterate the results using `ForEach`,
+or iterate the results using `foreach`,
 the operations are executed on the span to determine the results.
 It also uses additional type arguments beyond the `T` that `IEnumerable<T>` uses,
 which allows it to build up a query execution plan that does minimal allocations.
@@ -59,7 +59,10 @@ var query = span.AsSpanQuery()
 	.Where(i => i % 2 == 0)
 	.Select(i => i * i);
 
-query.ForEach(i => Console.WriteLine(i));
+foreach (var x in query)
+{
+    Console.WriteLine(x);
+}
 ```
 
 ### Use some operators on span without creating a query.

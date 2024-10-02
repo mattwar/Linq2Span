@@ -319,6 +319,22 @@ public class SpanQueryTests : TestBase
     }
 
     [TestMethod]
+    public void Test_foreach()
+    {
+        var items = new List<int>();
+
+        foreach (var x in OneToTen.AsSpanQuery().Where(x => x < 5))
+        {
+            items.Add(x);
+        }
+
+        AssertAreEquivalent(
+            OneToTen.Where(x => x < 5).ToArray(),
+            items.ToArray()
+            );
+    }
+
+    [TestMethod]
     public void Test_ForEach()
     {
         var items = new List<int>();
@@ -387,7 +403,6 @@ public class SpanQueryTests : TestBase
             items.ToArray()
             );
     }
-
 
     [TestMethod]
     public void Test_GroupBy()
