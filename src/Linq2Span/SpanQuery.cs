@@ -3,11 +3,11 @@
 using Enumerators;
 using System.Numerics;
 
-public ref struct SpanQuery<TSpan, TElement, TEnumerator>
+public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
     where TEnumerator : struct, ISpanEnumerator<TSpan, TElement>
 {
     private readonly ReadOnlySpan<TSpan> _span;
-    internal readonly TEnumerator _enumerator;
+    private readonly TEnumerator _enumerator;
 
     public SpanQuery(
         ReadOnlySpan<TSpan> span,
@@ -17,25 +17,43 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
         _enumerator = enumerator;
     }
 
-    internal SpanQuery<TSpan, TElement2, TEnumerator2> With<TElement2, TEnumerator2>(
+    /// <summary>
+    /// The underlying span enumerator used to execute the query.
+    /// </summary>
+    public TEnumerator SpanEnumerator => _enumerator;
+
+    /// <summary>
+    /// Constructs a new query with the specified enumerator.
+    /// </summary>
+    public SpanQuery<TSpan, TElement2, TEnumerator2> With<TElement2, TEnumerator2>(
         TEnumerator2 enumerator)
         where TEnumerator2 : struct, ISpanEnumerator<TSpan, TElement2>
     {
         return new SpanQuery<TSpan, TElement2, TEnumerator2>(_span, enumerator);
     }
 
-    internal SpanQuery<TSpan, TElement, TEnumerator2> With<TEnumerator2>(
+    /// <summary>
+    /// Constructs a new query with the specified enumerator.
+    /// </summary>
+    public SpanQuery<TSpan, TElement, TEnumerator2> With<TEnumerator2>(
         TEnumerator2 enumerator)
         where TEnumerator2 : struct, ISpanEnumerator<TSpan, TElement>
     {
         return new SpanQuery<TSpan, TElement, TEnumerator2>(_span, enumerator);
     }
 
+    /// <summary>
+    /// Gets the enumerator that enumertes the query results.
+    /// </summary>
     public Enumerator GetEnumerator()
     {
         return new Enumerator(_span, _enumerator);
     }
 
+    /// <summary>
+    /// An enumerator that enumerates the query results.
+    /// Used for foreach loops.
+    /// </summary>
     public ref struct Enumerator
     {
         private readonly ReadOnlySpan<TSpan> _span;
@@ -55,44 +73,20 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
         }
     }
 
-    public void ForEach(Func<TElement, int, bool> func)
-    {
-        int nextIndex = 0;
-        var enumerator = _enumerator;
-        while (enumerator.MoveNext(_span))
-        {
-            if (!func(enumerator.Current, nextIndex++))
-                return;
-        }
-    }
-
-    public void ForEach(Func<TElement, bool> func)
-    {
-        var enumerator = _enumerator;
-        while (enumerator.MoveNext(_span))
-        {
-            if (!func(enumerator.Current))
-                return;
-        }
-    }
-
     public void ForEach(Action<TElement, int> action)
     {
         int nextIndex = 0;
-
-        var enumerator = _enumerator;
-        while (enumerator.MoveNext(_span))
+        foreach (var element in this)
         {
-            action(enumerator.Current, nextIndex++);
+            action(element, nextIndex++);
         }
     }
 
     public void ForEach(Action<TElement> action)
     {
-        var enumerator = _enumerator;
-        while (enumerator.MoveNext(_span))
+        foreach (var element in this)
         {
-            action(enumerator.Current);
+            action(element);
         }
     }
 
@@ -100,10 +94,9 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
     {
         var list = new List<TElement>();
 
-        var enumerator = _enumerator;
-        while (enumerator.MoveNext(_span))
+        foreach (var element in this)
         {
-            list.Add(enumerator.Current);
+            list.Add(element);
         }
 
         return list;
@@ -119,10 +112,9 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
     {
         var hashset = new HashSet<TElement>(comparer ?? EqualityComparer<TElement>.Default);
 
-        var enumerator = _enumerator;
-        while (enumerator.MoveNext(_span))
+        foreach (var element in this)
         {
-            hashset.Add(enumerator.Current);
+            hashset.Add(element);
         }
 
         return hashset;
@@ -136,10 +128,8 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
     {
         var dictionary = new Dictionary<TKey, TValue>(comparer ?? EqualityComparer<TKey>.Default);
 
-        var enumerator = _enumerator;
-        while (enumerator.MoveNext(_span))
+        foreach (var element in this)
         {
-            var element = enumerator.Current;
             dictionary.Add(keySelector(element), valueSelector(element));
         }
 
@@ -162,10 +152,9 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
     {
         var result = seed;
 
-        var enumerator = _enumerator;
-        while (enumerator.MoveNext(_span))
+        foreach (var element in this)
         {
-            result = aggregator(result, enumerator.Current);
+            result = aggregator(result, element);
         }
 
         return result;
@@ -178,10 +167,9 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
     {
         var accumulate = seed;
 
-        var enumerator = _enumerator;
-        while (enumerator.MoveNext(_span))
+        foreach (var element in this)
         {
-            accumulate = aggregator(accumulate, enumerator.Current);
+            accumulate = aggregator(accumulate, element);
         }
 
         return selector(accumulate);
@@ -189,12 +177,12 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
 
     public bool All(Func<TElement, bool> predicate)
     {
-        var enumerator = _enumerator;
-        while (enumerator.MoveNext(_span))
+        foreach (var element in this)
         {
-            if (!predicate(enumerator.Current))
+            if (!predicate(element))
                 return false;
         }
+
         return true;
     }
 
@@ -210,20 +198,24 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
 
     public bool Any()
     {
-        var enumerator = _enumerator;
-        return enumerator.MoveNext(_span);
+        foreach (var element in this)
+        {
+            return true;
+        }
+
+        return false;
     }
 
     public bool Any(Func<TElement, bool> predicate)
     {
-        var enumerator = _enumerator;
-        while (enumerator.MoveNext(_span))
+        foreach (var element in this)
         {
-            if (predicate(enumerator.Current))
+            if (predicate(element))
             {
                 return true;
             }
         }
+
         return false;
     }
 
@@ -232,13 +224,14 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
     {
         var total = TNumber.Zero;
         var count = TNumber.Zero;
-        var enumerator = _enumerator;
-        while (enumerator.MoveNext(_span))
+
+        foreach (var element in this)
         {
-            var value = selector(enumerator.Current);
+            var value = selector(element);
             total = total + value;
             count += TNumber.One;
         }
+
         return total / count;
     }
 
@@ -276,10 +269,9 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
     {
         comparer ??= EqualityComparer<TElement>.Default;
 
-        var enumerator = _enumerator;
-        while (enumerator.MoveNext(_span))
+        foreach (var element in this)
         {
-            if (comparer.Equals(enumerator.Current, value))
+            if (comparer.Equals(element, value))
                 return true;
         }
 
@@ -288,24 +280,26 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
 
     public int Count()
     {
-        var enumerator = _enumerator;
         int count = 0;
-        while (enumerator.MoveNext(_span))
+
+        foreach (var element in this)
         {
             count++;
         }
+
         return count;
     }
 
     public int Count(Func<TElement, bool> predicate)
     {
-        var enumerator = _enumerator;
         int count = 0;
-        while (enumerator.MoveNext(_span))
+        
+        foreach (var element in this)
         {
-            if (predicate(enumerator.Current))
+            if (predicate(element))
                 count++;
         }
+
         return count;
     }
 
@@ -350,14 +344,14 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
     {
         if (index >= 0)
         {
-            var enumerator = _enumerator;
-            while (enumerator.MoveNext(_span))
+            foreach (var element in this)
             {
                 if (index == 0)
-                    return enumerator.Current;
+                    return element;
                 index--;
             }
         }
+
         throw new ArgumentOutOfRangeException(nameof(index));
     }
 
@@ -372,12 +366,11 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
         {
             var queue = new Queue<TElement>();
 
-            var enumerator = _enumerator;
-            while (enumerator.MoveNext(_span))
+            foreach (var element in this)
             {
                 if (queue.Count == distanceFromEnd)
                     queue.Dequeue();
-                queue.Enqueue(enumerator.Current);
+                queue.Enqueue(element);
             }
 
             if (queue.Count == distanceFromEnd)
@@ -393,11 +386,10 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
     {
         if (index >= 0)
         {
-            var enumerator = _enumerator;
-            while (enumerator.MoveNext(_span))
+            foreach (var element in this)
             {
                 if (index == 0)
-                    return enumerator.Current;
+                    return element;
                 index--;
             }
         }
@@ -416,12 +408,11 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
         {
             var queue = new Queue<TElement>();
 
-            var enumerator = _enumerator;
-            while (enumerator.MoveNext(_span))
+            foreach (var element in this)
             {
                 if (queue.Count == distanceFromEnd)
                     queue.Dequeue();
-                queue.Enqueue(enumerator.Current);
+                queue.Enqueue(element);
             }
 
             if (queue.Count == distanceFromEnd)
@@ -456,43 +447,43 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
 
     public TElement First()
     {
-        var enumerator = _enumerator;
-        if (enumerator.MoveNext(_span))
+        foreach (var element in this)
         {
-            return enumerator.Current;
+            return element;
         }
+
         throw Exceptions.GetSequenceIsEmpty();
     }
 
     public TElement First(Func<TElement, bool> predicate)
     {
-        var enumerator = _enumerator;
-        while (enumerator.MoveNext(_span))
+        foreach (var element in this)
         {
-            if (predicate(enumerator.Current))
-                return enumerator.Current;
+            if (predicate(element))
+                return element;
         }
+
         throw Exceptions.GetSequenceIsEmptyOrNotSatisfied();
     }
 
     public TElement? FirstOrDefault()
     {
-        var enumerator = _enumerator;
-        if (enumerator.MoveNext(_span))
+        foreach (var element in this)
         {
-            return enumerator.Current;
+            return element;
         }
+
         return default;
     }
 
     public TElement? FirstOrDefault(Func<TElement, bool> predicate)
     {
-        var enumerator = _enumerator;
-        while (enumerator.MoveNext(_span))
+        foreach (var element in this)
         {
-            if (predicate(enumerator.Current))
-                return enumerator.Current;
+            if (predicate(element))
+                return element;
         }
+
         return default;
     }
 
@@ -570,10 +561,9 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
         TElement result = default!;
         bool found = false;
 
-        var enumerator = _enumerator;
-        while (enumerator.MoveNext(_span))
+        foreach (var element in this)
         {
-            result = enumerator.Current;
+            result = element;
             found = true;
         }
 
@@ -588,12 +578,11 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
         TElement result = default!;
         bool found = false;
 
-        var enumerator = _enumerator;
-        while (enumerator.MoveNext(_span))
+        foreach (var element in this)
         {
-            if (predicate(enumerator.Current))
+            if (predicate(element))
             {
-                result = enumerator.Current;
+                result = element;
                 found = true;
             }
         }
@@ -606,49 +595,51 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
 
     public TElement? LastOrDefault()
     {
-        var enumerator = _enumerator;
         TElement? result = default;
-        while (enumerator.MoveNext(_span))
+        
+        foreach (var element in this)
         {
-            result = enumerator.Current;
+            result = element;
         }
+
         return result;
     }
 
     public TElement? LastOrDefault(Func<TElement, bool> predicate)
     {
-        var enumerator = _enumerator;
         TElement? result = default;
-        while (enumerator.MoveNext(_span))
+
+        foreach (var element in this)
         {
-            if (predicate(enumerator.Current))
-            {
-                result = enumerator.Current;
-            }
+            if (predicate(element))
+                result = element;
         }
+
         return result;
     }
 
     public long LongCount()
     {
-        var enumerator = _enumerator;
         long count = 0;
-        while (enumerator.MoveNext(_span))
+
+        foreach (var element in this)
         {
             count++;
         }
+
         return count;
     }
 
     public long LongCount(Func<TElement, bool> predicate)
     {
-        var enumerator = _enumerator;
         long count = 0;
-        while (enumerator.MoveNext(_span))
+
+        foreach (var element in this)
         {
-            if (predicate(enumerator.Current))
+            if (predicate(element))
                 count++;
         }
+
         return count;
     }
 
@@ -656,13 +647,12 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
         Func<TElement, TResult> selector)
     {
         var comparer = Comparer<TResult>.Default;
-        var enumerator = _enumerator;
         var hasValue = false;
         TResult maxValue = default!;
 
-        while (enumerator.MoveNext(_span))
+        foreach (var element in this)
         {
-            var value = selector(enumerator.Current);
+            var value = selector(element);
             if (!hasValue || comparer.Compare(value, maxValue) > 0)
             {
                 maxValue = value;
@@ -682,18 +672,17 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
     {
         comparer ??= Comparer<TKey>.Default;
 
-        var enumerator = _enumerator;
         var hasValue = false;
         TKey maxKey = default!;
         TElement maxValue = default!;
 
-        while (enumerator.MoveNext(_span))
+        foreach (var element in this)
         {
-            var key = keySelector(enumerator.Current);
+            var key = keySelector(element);
             if (!hasValue || comparer.Compare(key, maxKey) > 0)
             {
                 maxKey = key;
-                maxValue = enumerator.Current;
+                maxValue = element;
                 hasValue = true;
             }
         }
@@ -705,13 +694,12 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
         Func<TElement, TResult> selector)
     {
         var comparer = Comparer<TResult>.Default;
-        var enumerator = _enumerator;
         var hasValue = false;
         TResult minValue = default!;
 
-        while (enumerator.MoveNext(_span))
+        foreach (var element in this)
         {
-            var value = selector(enumerator.Current);
+            var value = selector(element);
             if (!hasValue || comparer.Compare(value, minValue) < 0)
             {
                 minValue = value;
@@ -731,18 +719,17 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
     {
         comparer ??= Comparer<TKey>.Default;
 
-        var enumerator = _enumerator;
         var hasValue = false;
         TKey maxKey = default!;
         TElement maxValue = default!;
 
-        while (enumerator.MoveNext(_span))
+        foreach (var element in this)
         {
-            var key = keySelector(enumerator.Current);
+            var key = keySelector(element);
             if (!hasValue || comparer.Compare(key, maxKey) < 0)
             {
                 maxKey = key;
-                maxValue = enumerator.Current;
+                maxValue = element;
                 hasValue = true;
             }
         }
@@ -907,96 +894,93 @@ public ref struct SpanQuery<TSpan, TElement, TEnumerator>
 
     public TElement Single()
     {
-        var enumerator = _enumerator;
-        if (enumerator.MoveNext(_span))
+        bool found = false;
+        TElement result = default!;
+
+        foreach (var element in this)
         {
-            var result = enumerator.Current;
-            if (!enumerator.MoveNext(_span))
-                return result;
+            if (found)
+                throw Exceptions.GetSequenceIsEmptyOrContainsMoreThanOneElement();
+            found = true;
+            result = element;
         }
 
-        throw Exceptions.GetSequenceIsEmptyOrContainsMoreThanOneElement();
+        if (!found)
+            throw Exceptions.GetSequenceIsEmptyOrContainsMoreThanOneElement();
+
+        return result;
     }
 
     public TElement Single(Func<TElement, bool> predicate)
     {
         bool found = false;
-        TElement element = default!;
+        TElement result = default!;
 
-        var enumerator = _enumerator;
-        while (enumerator.MoveNext(_span))
+        foreach (var element in this)
         {
-            if (predicate(enumerator.Current))
+            if (predicate(element))
             {
-                if (!found)
-                {
-                    found = true;
-                    element = enumerator.Current;
-                }
-                else
-                {
+                if (found)
                     throw Exceptions.GetSequenceIsEmptyOrNotSatisifiedOrContainsMoreThanOneElement();
-                }
+
+                found = true;
+                result = element;
             }
         }
 
         if (!found)
             throw Exceptions.GetSequenceIsEmptyOrNotSatisifiedOrContainsMoreThanOneElement();
 
-        return element;
+        return result;
     }
 
     public TElement? SingleOrDefault()
     {
-        var enumerator = _enumerator;
-        if (enumerator.MoveNext(_span))
+        var found = false;
+        TElement? result = default;
+
+        foreach (var element in this)
         {
-            var result = enumerator.Current;
-            if (!enumerator.MoveNext(_span))
-                return result;
-            throw Exceptions.GetSequenceContainsMoreThanOneElement();
+            if (found)
+                throw Exceptions.GetSequenceContainsMoreThanOneElement();
+            found = true;
+            result = element;
         }
 
-        return default;
+        return result;
     }
 
     public TElement? SingleOrDefault(Func<TElement, bool> predicate)
     {
-        var enumerator = _enumerator;
         bool found = false;
-        TElement? element = default!;
+        TElement? result = default;
 
-        while (enumerator.MoveNext(_span))
+        foreach (var element in this)
         {
-            if (predicate(enumerator.Current))
+            if (predicate(element))
             {
-                if (!found)
-                {
-                    found = true;
-                    element = enumerator.Current;
-                }
-                else
-                {
+                if (found)
                     throw Exceptions.GetSequenceContainsMoreThanOneElement();
-                }
+                found = true;
+                result = element;
             }
         }
 
-        return element;
+        return result;
     }
 
     public TNumber Sum<TNumber>(Func<TElement, TNumber> selector)
         where TNumber : INumber<TNumber>
     {
-        var enumerator = _enumerator;
         TNumber sum = TNumber.Zero;
-        while (enumerator.MoveNext(_span))
+
+        foreach (var element in this)
         {
-            sum = sum + selector(enumerator.Current);
+            sum = sum + selector(element);
         }
+
         return sum;
     }
-
 
     public SpanQuery<TSpan, TElement, TakeEnumerator<TSpan, TElement, TEnumerator>> Take(
         int count)
