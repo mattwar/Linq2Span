@@ -3,13 +3,24 @@
 using Enumerators;
 using System.Numerics;
 
+/// <summary>
+/// A query that operates over a span of elements.
+/// </summary>
+/// <typeparam name="TSpan">The type of the elements in the original span.</typeparam>
+/// <typeparam name="TElement">The current result element type of the query.</typeparam>
+/// <typeparam name="TEnumerator">The type of the underlying span enumerator that executes the query.</typeparam>
 public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
     where TEnumerator : struct, ISpanEnumerator<TSpan, TElement>
 {
     private readonly ReadOnlySpan<TSpan> _span;
     private readonly TEnumerator _enumerator;
 
-    public SpanQuery(
+    /// <summary>
+    /// Creates a new <see cref="SpanQuery{TSpan, TElement, TEnumerator}"/>
+    /// </summary>
+    /// <param name="span">The span of data they query is run against.</param>
+    /// <param name="enumerator">The span enumerator that executes the query.</param>
+    internal SpanQuery(
         ReadOnlySpan<TSpan> span,
         TEnumerator enumerator)
     {
@@ -73,6 +84,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         }
     }
 
+    /// <summary>
+    /// Enumerates the query results and calls the specified action for each element.
+    /// </summary>
     public void ForEach(Action<TElement, int> action)
     {
         int nextIndex = 0;
@@ -82,6 +96,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         }
     }
 
+    /// <summary>
+    /// Enumerates the query results and calls the specified action for each element.
+    /// </summary>
     public void ForEach(Action<TElement> action)
     {
         foreach (var element in this)
@@ -90,6 +107,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         }
     }
 
+    /// <summary>
+    /// Executes the query and returns the results as a <see cref="List{T}"/>.
+    /// </summary>
     public List<TElement> ToList()
     {
         var list = new List<TElement>();
@@ -102,11 +122,17 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return list;
     }
 
+    /// <summary>
+    /// Executes the query and returns the results as an array.
+    /// </summary>
     public TElement[] ToArray()
     {
         return ToList().ToArray();
     }
 
+    /// <summary>
+    /// Executes the query and returns the results a <see cref="HashSet{T}"/>.
+    /// </summary>
     public HashSet<TElement> ToHashSet(
         IEqualityComparer<TElement>? comparer = null)
     {
@@ -120,6 +146,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return hashset;
     }
 
+    /// <summary>
+    /// Executes the query and returns the results a <see cref="Dictionary{TKey, TValue}"/>.
+    /// </summary>
     public Dictionary<TKey, TValue> ToDictionary<TKey, TValue>(
         Func<TElement, TKey> keySelector,
         Func<TElement, TValue> valueSelector,
@@ -136,6 +165,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return dictionary;
     }
 
+    /// <summary>
+    /// Executes the query and returns the results a <see cref="Dictionary{TKey, TElement}"/>.
+    /// </summary>
     public Dictionary<TKey, TElement> ToDictionary<TKey>(
         Func<TElement, TKey> keySelector,
         IEqualityComparer<TKey>? comparer = null)
@@ -146,6 +178,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
 
     #region Operators
 
+    /// <summary>
+    /// Computes the aggregate of the query results.
+    /// </summary>
     public TResult Aggregate<TResult>(
         TResult seed,
         Func<TResult, TElement, TResult> aggregator)
@@ -160,6 +195,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return result;
     }
 
+    /// <summary>
+    /// Computes the aggregate of the query results.
+    /// </summary>
     public TResult Aggregate<TAccumulate, TResult>(
         TAccumulate seed,
         Func<TAccumulate, TElement, TAccumulate> aggregator,
@@ -175,6 +213,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return selector(accumulate);
     }
 
+    /// <summary>
+    /// Returns true if all elements of the query results satisifies the predicate.
+    /// </summary>
     public bool All(Func<TElement, bool> predicate)
     {
         foreach (var element in this)
@@ -186,6 +227,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return true;
     }
 
+    /// <summary>
+    /// Returns a query that produces the results of the original query with an additional element added to the end.
+    /// </summary>
     public SpanQuery<TSpan, TElement, AppendEnumerator<TSpan, TElement, TEnumerator>> Append(
         TElement element)
     {
@@ -196,6 +240,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
                 ));
     }
 
+    /// <summary>
+    /// Returns true if the query has any results.
+    /// </summary>
     public bool Any()
     {
         foreach (var element in this)
@@ -206,6 +253,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return false;
     }
 
+    /// <summary>
+    /// Returns true if the query has any result element that satifies the predicate.
+    /// </summary>
     public bool Any(Func<TElement, bool> predicate)
     {
         foreach (var element in this)
@@ -219,6 +269,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return false;
     }
 
+    /// <summary>
+    /// Computes the average value of the selected query results.
+    /// </summary>
     public TNumber Average<TNumber>(Func<TElement, TNumber> selector)
         where TNumber : INumber<TNumber>
     {
@@ -235,6 +288,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return total / count;
     }
 
+    /// <summary>
+    /// Returns a query that casts each element of the original query to the specified type.
+    /// </summary>
     public SpanQuery<TSpan, TResult, CastEnumerator<TSpan, TElement, TEnumerator, TResult>> Cast<TResult>()
     {
         return With<TResult, CastEnumerator<TSpan, TElement, TEnumerator, TResult>>(
@@ -243,6 +299,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
             ));
     }
 
+    /// <summary>
+    /// Returns a query that breaks the elements of the original query into chunks.
+    /// </summary>
     public SpanQuery<TSpan, TElement[], ChunkEnumerator<TSpan, TElement, TEnumerator>> Chunk(
         int size)
     {
@@ -253,6 +312,10 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
             );
     }
 
+    /// <summary>
+    /// Returns a query that produces the concatenation of the results of the original query 
+    /// with the specified list of elements.
+    /// </summary>
     public SpanQuery<TSpan, TElement, ConcatEnumerator<TSpan, TElement, TEnumerator>> Concat(
         IEnumerable<TElement> elements)
     {
@@ -263,6 +326,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
                 ));
     }
 
+    /// <summary>
+    /// Returns true if the query results contains the specified value.
+    /// </summary>
     public bool Contains(
         TElement value,
         IEqualityComparer<TElement>? comparer = null)
@@ -278,6 +344,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return false;
     }
 
+    /// <summary>
+    /// Returns the number of elements in the query results.
+    /// </summary>
     public int Count()
     {
         int count = 0;
@@ -290,6 +359,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return count;
     }
 
+    /// <summary>
+    /// Returns the number of elements in the query results that satisfy the predicate.
+    /// </summary>
     public int Count(Func<TElement, bool> predicate)
     {
         int count = 0;
@@ -303,6 +375,10 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return count;
     }
 
+    /// <summary>
+    /// Returns a new query the produces the results of the original query if the results are not empty,
+    /// otherwise produces a single result of the default value.
+    /// </summary>
     public SpanQuery<TSpan, TElement, DefaultIfEmptyEnumerator<TSpan, TElement, TEnumerator>> DefaultIfEmpty(
         TElement defaultValue)
     {
@@ -313,6 +389,10 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
                 ));
     }
 
+    /// <summary>
+    /// Returns a new query the produces the results of the original query if the results are not empty,
+    /// otherwise produces a single result of the default value for the result type.
+    /// </summary>
     public SpanQuery<TSpan, TElement, DefaultIfEmptyEnumerator<TSpan, TElement, TEnumerator>> DefaultIfEmpty()
     {
         return With(
@@ -322,12 +402,18 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
                 ));
     }
 
+    /// <summary>
+    /// Returns a query that produces the distinct elements of the original query.
+    /// </summary>
     public SpanQuery<TSpan, TElement, DistinctByEnumerator<TSpan, TElement, TEnumerator, TElement>> Distinct(
         IEqualityComparer<TElement>? keyComparer = null)
     {
         return DistinctBy(e => e, keyComparer);
     }
 
+    /// <summary>
+    /// Returns a query that procues the distinct elements of the original query as determined by the specified key selector.
+    /// </summary>
     public SpanQuery<TSpan, TElement, DistinctByEnumerator<TSpan, TElement, TEnumerator, TKey>> DistinctBy<TKey>(
         Func<TElement, TKey> keySelector,
         IEqualityComparer<TKey>? keyComparer = null)
@@ -340,6 +426,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
                 ));
     }
 
+    /// <summary>
+    /// Returns the element of the query results at the specified index.
+    /// </summary>
     public TElement ElementAt(int index)
     {
         if (index >= 0)
@@ -355,6 +444,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         throw new ArgumentOutOfRangeException(nameof(index));
     }
 
+    /// <summary>
+    /// Returns the element of the query results at the specified index.
+    /// </summary>
     public TElement ElementAt(Index index)
     {
         if (!index.IsFromEnd)
@@ -362,7 +454,10 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
 
         var distanceFromEnd = index.Value;
 
-        if (distanceFromEnd > 0)
+        if (distanceFromEnd == 1)
+            return Last();
+
+        if (distanceFromEnd > 1)
         {
             var queue = new Queue<TElement>();
 
@@ -382,6 +477,10 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         throw new ArgumentOutOfRangeException(nameof(index));
     }
 
+    /// <summary>
+    /// Returns the element of the query results at the specified index.
+    /// If index is out of range it returns the default value for the element type.
+    /// </summary>
     public TElement? ElementAtOrDefault(int index)
     {
         if (index >= 0)
@@ -397,6 +496,10 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return default;
     }
 
+    /// <summary>
+    /// Returns the element of the query results at the specified index.
+    /// If index is out of range it returns the default value for the element type.
+    /// </summary>
     public TElement? ElementAtOrDefault(Index index)
     {
         if (!index.IsFromEnd)
@@ -404,7 +507,10 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
 
         var distanceFromEnd = index.Value;
 
-        if (distanceFromEnd > 0)
+        if (distanceFromEnd == 1)
+            return LastOrDefault();
+
+        if (distanceFromEnd > 1)
         {
             var queue = new Queue<TElement>();
 
@@ -424,6 +530,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return default;
     }
 
+    /// <summary>
+    /// Returns a query that produces the elements of the original query, except for those elements in the specified list.
+    /// </summary>
     public SpanQuery<TSpan, TElement, ExceptByEnumerator<TSpan, TElement, TEnumerator, TElement>> Except(
         IEnumerable<TElement> elements,
         IEqualityComparer<TElement>? comparer = null)
@@ -431,6 +540,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return ExceptBy(elements, x => x, comparer);
     }
 
+    /// <summary>
+    /// Returns a query that produces the elements of the original query, except for those elements with keys in the specified list.
+    /// </summary>
     public SpanQuery<TSpan, TElement, ExceptByEnumerator<TSpan, TElement, TEnumerator, TKey>> ExceptBy<TKey>(
         IEnumerable<TKey> keys,
         Func<TElement, TKey> keySelector,
@@ -445,6 +557,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
                 ));
     }
 
+    /// <summary>
+    /// Returns the first element of the query results.
+    /// </summary>
     public TElement First()
     {
         foreach (var element in this)
@@ -455,6 +570,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         throw Exceptions.GetSequenceIsEmpty();
     }
 
+    /// <summary>
+    /// Returns the first element of the query results that satifies the predicate.
+    /// </summary>
     public TElement First(Func<TElement, bool> predicate)
     {
         foreach (var element in this)
@@ -466,6 +584,10 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         throw Exceptions.GetSequenceIsEmptyOrNotSatisfied();
     }
 
+    /// <summary>
+    /// Returns the first element of the query results.
+    /// If the query has not results, returns the default value for the element type.
+    /// </summary>
     public TElement? FirstOrDefault()
     {
         foreach (var element in this)
@@ -476,6 +598,10 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return default;
     }
 
+    /// <summary>
+    /// Returns the first element of the query result that satisfies the predicate.
+    /// If the query has not results, returns the default value for the element type.
+    /// </summary>
     public TElement? FirstOrDefault(Func<TElement, bool> predicate)
     {
         foreach (var element in this)
@@ -517,6 +643,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
                 ));
     }
 
+    /// <summary>
+    /// Returns a query that produces the elements of the original query that have keys also in the specified list.
+    /// </summary>
     public SpanQuery<TSpan, TElement, IntersectByEnumerator<TSpan, TElement, TEnumerator, TKey>> IntersectBy<TKey>(
         IEnumerable<TKey> keys,
         Func<TElement, TKey> keySelector,
@@ -531,6 +660,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
                 ));
     }
 
+    /// <summary>
+    /// Returns a query that produces the elements of the original query that is also in the specified list.
+    /// </summary>
     public SpanQuery<TSpan, TElement, IntersectByEnumerator<TSpan, TElement, TEnumerator, TElement>> Intersect(
         IEnumerable<TElement> elements,
         IEqualityComparer<TElement>? comparer = null)
@@ -538,6 +670,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return IntersectBy(elements, x => x, comparer);
     }
 
+    /// <summary>
+    /// Produces the join of the result of the original query with the specified list of elements.
+    /// </summary>
     public SpanQuery<TSpan, TResult, JoinEnumerator<TSpan, TElement, TEnumerator, TInner, TKey, TResult>> Join<TInner, TKey, TResult>(
         IEnumerable<TInner> inner,
         Func<TElement, TKey> outerKeySelector,
@@ -556,6 +691,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
                 ));
     }
 
+    /// <summary>
+    /// The last element in the query results.
+    /// </summary>
     public TElement Last()
     {
         TElement result = default!;
@@ -573,6 +711,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return result;
     }
 
+    /// <summary>
+    /// The last element in the query results that satisfies the predicate.
+    /// </summary>
     public TElement Last(Func<TElement, bool> predicate)
     {
         TElement result = default!;
@@ -593,6 +734,10 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return result;
     }
 
+    /// <summary>
+    /// Returns the last element in the query result.
+    /// If the query has no results it returns the default value for the element type.
+    /// </summary>
     public TElement? LastOrDefault()
     {
         TElement? result = default;
@@ -605,6 +750,10 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return result;
     }
 
+    /// <summary>
+    /// Returns the last element in the query results that satisfies the predicate.
+    /// If the query has no results it returns the default value for the element type.
+    /// </summary>
     public TElement? LastOrDefault(Func<TElement, bool> predicate)
     {
         TElement? result = default;
@@ -618,6 +767,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return result;
     }
 
+    /// <summary>
+    /// Returns the count of the element in the query result.
+    /// </summary>
     public long LongCount()
     {
         long count = 0;
@@ -630,6 +782,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return count;
     }
 
+    /// <summary>
+    /// Returns the count of the element in the query result that satisfies the predicate.
+    /// </summary>
     public long LongCount(Func<TElement, bool> predicate)
     {
         long count = 0;
@@ -643,6 +798,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return count;
     }
 
+    /// <summary>
+    /// Returns that maximum selected value of the query results.
+    /// </summary>
     public TResult Max<TResult>(
         Func<TElement, TResult> selector)
     {
@@ -666,6 +824,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return maxValue;
     }
 
+    /// <summary>
+    /// Returns that maximum element of the query results as determined by key value.
+    /// </summary>
     public TElement? MaxBy<TKey>(
         Func<TElement, TKey> keySelector,
         IComparer<TKey>? comparer = null)
@@ -690,6 +851,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return maxValue;
     }
 
+    /// <summary>
+    /// Returns that minimum selected value of the query results.
+    /// </summary>
     public TResult Min<TResult>(
         Func<TElement, TResult> selector)
     {
@@ -713,6 +877,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return minValue;
     }
 
+    /// <summary>
+    /// Returns that minimum element of the query results as determined by key value.
+    /// </summary>
     public TElement? MinBy<TKey>(
         Func<TElement, TKey> keySelector,
         IComparer<TKey>? comparer = null)
@@ -737,6 +904,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return maxValue;
     }
 
+    /// <summary>
+    /// Returns the elements of the original query that are of the specified type.
+    /// </summary>
     public SpanQuery<TSpan, TResult, OfTypeEnumerator<TSpan, TElement, TEnumerator, TResult>> OfType<TResult>()
     {
         return With<TResult, OfTypeEnumerator<TSpan, TElement, TEnumerator, TResult>>(
@@ -745,6 +915,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
                 ));
     }
 
+    /// <summary>
+    /// Returns a query that produces the elements of the original query in order.
+    /// </summary>
     public SpanQuery<TSpan, TElement, OrderByEnumerator<TSpan, TElement, TEnumerator>> Order(
         IComparer<TElement>? comparer = null)
     {
@@ -756,6 +929,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
             ));
     }
 
+    /// <summary>
+    /// Returns a query that produces the elements of the original query in order of the specified key.
+    /// </summary>
     public SpanQuery<TSpan, TElement, OrderByEnumerator<TSpan, TElement, TEnumerator>> OrderBy<TKey>(
         Func<TElement, TKey> keySelector,
         IComparer<TKey>? comparer = null)
@@ -768,6 +944,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
             ));
     }
 
+    /// <summary>
+    /// Returns a query that produces the elements of the original query in descending order of the specified key.
+    /// </summary>
     public SpanQuery<TSpan, TElement, OrderByEnumerator<TSpan, TElement, TEnumerator>> OrderByDescending<TKey>(
         Func<TElement, TKey> keySelector,
         IComparer<TKey>? comparer = null)
@@ -780,6 +959,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
             ));
     }
 
+    /// <summary>
+    /// Returns a query that produces the elements of the original query in descending order.
+    /// </summary>
     public SpanQuery<TSpan, TElement, OrderByEnumerator<TSpan, TElement, TEnumerator>> OrderDescending(
         IComparer<TElement>? comparer = null)
     {
@@ -791,6 +973,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
             ));
     }
 
+    /// <summary>
+    /// Returns a query that produces the prepended element followed by the elements of the result of the original query.
+    /// </summary>
     public SpanQuery<TSpan, TElement, PrependSpanEnumerator<TSpan, TElement, TEnumerator>> Prepend(
         TElement element)
     {
@@ -801,6 +986,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
                 ));
     }
 
+    /// <summary>
+    /// Returns a query that produces the result of the original query in reverse.
+    /// </summary>
     public SpanQuery<TSpan, TElement, ReverseEnumerator<TSpan, TElement, TEnumerator>> Reverse()
     {
         return With(
@@ -809,6 +997,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
                 ));
     }
 
+    /// <summary>
+    /// Returns a query that produces the selected or mapped values of the original query results.
+    /// </summary>
     public SpanQuery<TSpan, TResult, SelectEnumerator<TSpan, TElement, TEnumerator, TResult>> Select<TResult>(
         Func<TElement, int, TResult> selector)
     {
@@ -819,24 +1010,36 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
                 ));
     }
 
+    /// <summary>
+    /// Returns a query that produces the selected or mapped values of the original query results.
+    /// </summary>
     public SpanQuery<TSpan, TResult, SelectEnumerator<TSpan, TElement, TEnumerator, TResult>> Select<TResult>(
         Func<TElement, TResult> selector)
     {
         return Select((x, _) => selector(x));
     }
 
+    /// <summary>
+    /// Returns a query that produces the selected result of the original query results, flattend into a single sequence.
+    /// </summary>
     public SpanQuery<TSpan, TResult, SelectManyEnumerator<TSpan, TElement, TEnumerator, TResult, TResult>> SelectMany<TResult>(
         Func<TElement, int, IEnumerable<TResult>> selector)
     {
         return SelectMany(selector, (x, y) => y);
     }
 
+    /// <summary>
+    /// Returns a query that produces the selected result of the original query results, flattend into a single sequence.
+    /// </summary>
     public SpanQuery<TSpan, TResult, SelectManyEnumerator<TSpan, TElement, TEnumerator, TResult, TResult>> SelectMany<TResult>(
         Func<TElement, IEnumerable<TResult>> selector)
     {
         return SelectMany((x, _) => selector(x));
     }
-    
+
+    /// <summary>
+    /// Returns a query that produces the selected result of the original query results, flattend into a single sequence.
+    /// </summary>
     public SpanQuery<TSpan, TResult, SelectManyEnumerator<TSpan, TElement, TEnumerator, TCollection, TResult>> SelectMany<TCollection, TResult>(
         Func<TElement, int, IEnumerable<TCollection>> collectionSelector,
         Func<TElement, TCollection, TResult> resultSelector)
@@ -849,6 +1052,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
                 ));
     }
 
+    /// <summary>
+    /// Returns a query that produces the selected result of the original query results, flattend into a single sequence.
+    /// </summary>
     public SpanQuery<TSpan, TResult, SelectManyEnumerator<TSpan, TElement, TEnumerator, TCollection, TResult>> SelectMany<TCollection, TResult>(
         Func<TElement, IEnumerable<TCollection>> collectionSelector,
         Func<TElement, TCollection, TResult> resultSelector)
@@ -856,6 +1062,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return SelectMany((x, i) => collectionSelector(x), resultSelector);
     }
 
+    /// <summary>
+    /// Returns a query that produces the results of the original query, except for the first n elements.
+    /// </summary>
     public SpanQuery<TSpan, TElement, SkipEnumerator<TSpan, TElement, TEnumerator>> Skip(
         int count)
     {
@@ -866,6 +1075,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
             ));
     }
 
+    /// <summary>
+    /// Returns a query that produces the results of the original query, except for the last n elements.
+    /// </summary>
     public SpanQuery<TSpan, TElement, SkipLastEnumerator<TSpan, TElement, TEnumerator>> SkipLast(
         int count)
     {
@@ -876,6 +1088,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
             ));
     }
 
+    /// <summary>
+    /// Returns a query that produces the results of the original query, except for the first elements that satisify the predicate.
+    /// </summary>
     public SpanQuery<TSpan, TElement, SkipWhileEnumerator<TSpan, TElement, TEnumerator>> SkipWhile(
         Func<TElement, int, bool> predicate)
     {
@@ -886,12 +1101,18 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
             ));
     }
 
+    /// <summary>
+    /// Returns a query that produces the results of the original query, except for the first elements that satisify the predicate.
+    /// </summary>
     public SpanQuery<TSpan, TElement, SkipWhileEnumerator<TSpan, TElement, TEnumerator>> SkipWhile(
         Func<TElement, bool> predicate)
     {
         return SkipWhile((x, _) => predicate(x));
     }
 
+    /// <summary>
+    /// Returns the single result element of the query.
+    /// </summary>
     public TElement Single()
     {
         bool found = false;
@@ -911,6 +1132,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return result;
     }
 
+    /// <summary>
+    /// Returns the single result element of the query that satifies the predicate.
+    /// </summary>
     public TElement Single(Func<TElement, bool> predicate)
     {
         bool found = false;
@@ -934,6 +1158,10 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return result;
     }
 
+    /// <summary>
+    /// Returns the single result element of the query.
+    /// If the query has no results, returns the default value for the element type.
+    /// </summary>
     public TElement? SingleOrDefault()
     {
         var found = false;
@@ -950,6 +1178,10 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return result;
     }
 
+    /// <summary>
+    /// Returns the single result element of the query that satifies the predicate.
+    /// If the query has no results, returns the default value for the element type.
+    /// </summary>
     public TElement? SingleOrDefault(Func<TElement, bool> predicate)
     {
         bool found = false;
@@ -969,6 +1201,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return result;
     }
 
+    /// <summary>
+    /// Returns the sum of the query results.
+    /// </summary>
     public TNumber Sum<TNumber>(Func<TElement, TNumber> selector)
         where TNumber : INumber<TNumber>
     {
@@ -982,6 +1217,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return sum;
     }
 
+    /// <summary>
+    /// Returns a query that produces the first n elements of the original query results.
+    /// </summary>
     public SpanQuery<TSpan, TElement, TakeEnumerator<TSpan, TElement, TEnumerator>> Take(
         int count)
     {
@@ -992,6 +1230,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
             ));
     }
 
+    /// <summary>
+    /// Returns a query that produces the last n elements of the original query results.
+    /// </summary>
     public SpanQuery<TSpan, TElement, TakeLastEnumerator<TSpan, TElement, TEnumerator>> TakeLast(
         int count)
     {
@@ -1002,6 +1243,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
             ));
     }
 
+    /// <summary>
+    /// Returns a query that produces the first elements of the original query results that satisfy the predicate.
+    /// </summary>
     public SpanQuery<TSpan, TElement, TakeWhileEnumerator<TSpan, TElement, TEnumerator>> TakeWhile(
         Func<TElement, int, bool> predicate)
     {
@@ -1012,12 +1256,18 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
             ));
     }
 
+    /// <summary>
+    /// Returns a query that produces the first elements of the original query results that satisfy the predicate.
+    /// </summary>
     public SpanQuery<TSpan, TElement, TakeWhileEnumerator<TSpan, TElement, TEnumerator>> TakeWhile(
         Func<TElement, bool> predicate)
     {
         return TakeWhile((x, _) => predicate(x));
     }
 
+    /// <summary>
+    /// Returns a query that produces the distinct union of the original query results and the specified list of elements.
+    /// </summary>
     public SpanQuery<TSpan, TElement, UnionByEnumerator<TSpan, TElement, TEnumerator, TElement>> Union(
         IEnumerable<TElement> elements,
         IEqualityComparer<TElement>? comparer = null)
@@ -1025,6 +1275,10 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
         return UnionBy(elements, x => x, comparer);
     }
 
+    /// <summary>
+    /// Returns a query that produces the distinct union of the original query results and the specified list of elements,
+    /// as determined by the corresponding keys.
+    /// </summary>
     public SpanQuery<TSpan, TElement, UnionByEnumerator<TSpan, TElement, TEnumerator, TKey>> UnionBy<TKey>(
         IEnumerable<TElement> elements,
         Func<TElement, TKey> keySelector,
@@ -1039,6 +1293,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
                 )); 
     }
 
+    /// <summary>
+    /// Returns a query that produces the result of the original query that satisfy the predicate.
+    /// </summary>
     public SpanQuery<TSpan, TElement, WhereEnumerator<TSpan, TElement, TEnumerator>> Where(
         Func<TElement, int, bool> predicate)
     {
@@ -1049,6 +1306,9 @@ public readonly ref struct SpanQuery<TSpan, TElement, TEnumerator>
                 ));
     }
 
+    /// <summary>
+    /// Returns a query that produces the result of the original query that satisfy the predicate.
+    /// </summary>
     public SpanQuery<TSpan, TElement, WhereEnumerator<TSpan, TElement, TEnumerator>> Where(
         Func<TElement, bool> predicate)
     {
